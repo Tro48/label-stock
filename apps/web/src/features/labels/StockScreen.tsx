@@ -96,7 +96,8 @@ export function StockScreen() {
         searchRef={searchRef}
         search={query.search}
         onSearchChange={query.setSearch}
-        onCounterpartyChange={query.setCounterpartyId}
+        counterpartyName={query.counterpartyName}
+        onCounterpartyNameChange={query.setCounterpartyName}
         onlyEmpty={query.onlyEmpty}
         onOnlyEmptyChange={query.setOnlyEmpty}
         onCreate={() => setModal({ kind: 'form', mode: { kind: 'create' } })}

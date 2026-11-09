@@ -58,6 +58,8 @@ export const LABEL_SORT_FIELDS = [
 export const listLabelsQuerySchema = paginationQuerySchema.extend({
   search: searchTextSchema,
   counterpartyId: uuidSchema.optional(),
+  /** Часть названия контрагента: «холдинг» находит «ЖК Холдинг». */
+  counterpartyName: searchTextSchema,
   onlyEmpty: z.stringbool().default(false),
   deleted: z.stringbool().default(false),
   sort: z.enum(LABEL_SORT_FIELDS).default('counterparty'),
@@ -76,7 +78,7 @@ export type ListLabelsQuery = z.output<typeof listLabelsQuerySchema>;
 /** Параметры списка на стороне клиента: до сериализации в query string. */
 export interface ListLabelsParams {
   search?: string | undefined;
-  counterpartyId?: string | undefined;
+  counterpartyName?: string | undefined;
   onlyEmpty?: boolean;
   deleted?: boolean;
   sort?: LabelSortField;

@@ -8,11 +8,12 @@ const SEARCH_DEBOUNCE_MS = 300;
 /** Состояние фильтров таблицы. Любая смена фильтра возвращает на первую страницу. */
 export function useLabelsQueryState(deleted: boolean) {
   const [search, setSearch] = useState('');
-  const [counterpartyId, setCounterpartyId] = useState<string>();
+  const [counterpartyName, setCounterpartyName] = useState('');
   const [onlyEmpty, setOnlyEmpty] = useState(false);
   const [sortState, setSortState] = useState<SortState>({ sort: 'counterparty', order: 'asc' });
   const [page, setPage] = useState(1);
   const debouncedSearch = useDebouncedValue(search.trim(), SEARCH_DEBOUNCE_MS);
+  const debouncedCounterpartyName = useDebouncedValue(counterpartyName.trim(), SEARCH_DEBOUNCE_MS);
 
   const resetPage =
     <Value>(setter: (value: Value) => void) =>
@@ -23,7 +24,7 @@ export function useLabelsQueryState(deleted: boolean) {
 
   const params: ListLabelsParams = {
     search: debouncedSearch || undefined,
-    counterpartyId,
+    counterpartyName: debouncedCounterpartyName || undefined,
     onlyEmpty,
     deleted,
     sort: sortState.sort,
@@ -35,13 +36,14 @@ export function useLabelsQueryState(deleted: boolean) {
     params,
     search,
     setSearch: resetPage(setSearch),
-    setCounterpartyId: resetPage(setCounterpartyId),
+    counterpartyName,
+    setCounterpartyName: resetPage(setCounterpartyName),
     onlyEmpty,
     setOnlyEmpty: resetPage(setOnlyEmpty),
     sortState,
     setSortState: resetPage(setSortState),
     page,
     setPage,
-    hasFilters: Boolean(debouncedSearch || counterpartyId || onlyEmpty),
+    hasFilters: Boolean(debouncedSearch || debouncedCounterpartyName || onlyEmpty),
   };
 }

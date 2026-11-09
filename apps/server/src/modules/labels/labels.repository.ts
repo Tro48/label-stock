@@ -46,13 +46,22 @@ const SORT_EXPRESSIONS: Record<LabelSortField, SQL[]> = {
   updatedAt: [sql`${labels.updatedAt}`],
 };
 
+/**
+ * Штрихкод ищется по началу или по концу: обычно набирают его последние цифры.
+ * Середину не ищем, иначе короткий ввод цепляет случайные совпадения внутри кодов.
+ */
+function buildBarcodeCondition(search: string): SQL | undefined {
+  const barcode = escapeLikePattern(normalizeBarcode(search));
+  if (!barcode) return undefined;
+  return or(like(labels.barcode, `${barcode}%`), like(labels.barcode, `%${barcode}`));
+}
+
 function buildSearchCondition(search: string): SQL | undefined {
   const escaped = escapeLikePattern(search);
-  const barcode = normalizeBarcode(search);
   return or(
     ilike(counterparties.name, `%${escaped}%`),
     like(labels.layoutNumber, `${escaped}%`),
-    barcode ? like(labels.barcode, `${escapeLikePattern(barcode)}%`) : undefined,
+    buildBarcodeCondition(search),
   );
 }
 
@@ -63,6 +72,9 @@ export class LabelsRepository {
     const where = and(
       query.deleted ? isNotNull(labels.deletedAt) : isNull(labels.deletedAt),
       query.counterpartyId ? eq(labels.counterpartyId, query.counterpartyId) : undefined,
+      query.counterpartyName
+        ? ilike(counterparties.name, `%${escapeLikePattern(query.counterpartyName)}%`)
+        : undefined,
       query.onlyEmpty ? eq(labels.quantity, 0) : undefined,
       query.search ? buildSearchCondition(query.search) : undefined,
     );

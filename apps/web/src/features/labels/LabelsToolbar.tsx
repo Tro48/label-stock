@@ -1,11 +1,12 @@
-import { useId, useState, type Ref } from 'react';
+import { useId, type Ref } from 'react';
 import { CounterpartyInput } from '../counterparties/CounterpartyInput';
 
 interface LabelsToolbarProps {
   searchRef: Ref<HTMLInputElement>;
   search: string;
   onSearchChange: (value: string) => void;
-  onCounterpartyChange: (counterpartyId: string | undefined) => void;
+  counterpartyName: string;
+  onCounterpartyNameChange: (value: string) => void;
   onlyEmpty: boolean;
   onOnlyEmptyChange: (value: boolean) => void;
   onCreate: () => void;
@@ -15,13 +16,13 @@ export function LabelsToolbar({
   searchRef,
   search,
   onSearchChange,
-  onCounterpartyChange,
+  counterpartyName,
+  onCounterpartyNameChange,
   onlyEmpty,
   onOnlyEmptyChange,
   onCreate,
 }: LabelsToolbarProps) {
   const ids = useId();
-  const [counterpartyName, setCounterpartyName] = useState('');
 
   return (
     <div className="toolbar">
@@ -34,7 +35,7 @@ export function LabelsToolbar({
           ref={searchRef}
           type="search"
           className="input input--large"
-          placeholder="Контрагент, номер макета или штрихкод"
+          placeholder="Контрагент, номер макета или последние цифры штрихкода"
           autoComplete="off"
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
@@ -53,8 +54,7 @@ export function LabelsToolbar({
             className="input"
             placeholder="Все"
             value={counterpartyName}
-            onChange={(event) => setCounterpartyName(event.target.value)}
-            onMatchChange={(counterparty) => onCounterpartyChange(counterparty?.id)}
+            onChange={(event) => onCounterpartyNameChange(event.target.value)}
           />
         </div>
 

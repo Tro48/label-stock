@@ -135,6 +135,148 @@ describe('позиции: список, поиск, сортировка, by-bar
       expect(layoutNumbers(await list({ search: 'ФИС1' }))).toEqual(['1']);
     });
 
+    describe('по штрихкоду', () => {
+      async function createBarcodes() {
+        const counterparty = await createCounterparty(context.app, 'Без цифр в названии');
+        await createLabel(context.app, {
+          counterpartyId: counterparty.id,
+          layoutNumber: '1',
+          barcode: '4601234567890',
+        });
+        await createLabel(context.app, {
+          counterpartyId: counterparty.id,
+          layoutNumber: '2',
+          barcode: '4609876543210',
+        });
+      }
+
+      it('по последним шести цифрам', async () => {
+        await createBarcodes();
+        expect(layoutNumbers(await list({ search: '567890' }))).toEqual(['1']);
+      });
+
+      it('по полному коду', async () => {
+        await createBarcodes();
+        expect(layoutNumbers(await list({ search: '4609876543210' }))).toEqual(['2']);
+      });
+
+      it('по началу кода — как раньше', async () => {
+        await createBarcodes();
+        expect(layoutNumbers(await list({ search: '460' }))).toEqual(['1', '2']);
+      });
+
+      it('по середине кода — не находит', async () => {
+        await createBarcodes();
+        expect(layoutNumbers(await list({ search: '345678' }))).toEqual([]);
+      });
+
+      it('последние цифры с пробелами вокруг', async () => {
+        await createBarcodes();
+        expect(layoutNumbers(await list({ search: '  543210 ' }))).toEqual(['2']);
+      });
+
+      it('конец кода в русской раскладке', async () => {
+        const counterparty = await createCounterparty(context.app, 'Без букв');
+        await createLabel(context.app, {
+          counterpartyId: counterparty.id,
+          layoutNumber: '1',
+          barcode: 'XYZABC',
+        });
+        expect(layoutNumbers(await list({ search: 'ФИС' }))).toEqual(['1']);
+      });
+
+      it('удалённая позиция по концу кода не находится в активных', async () => {
+        await createBarcodes();
+        const gone = await createLabel(context.app, {
+          layoutNumber: '3',
+          barcode: '4600000111222',
+        });
+        await context.app.inject({ method: 'DELETE', url: `/api/labels/${gone.id}` });
+        expect(layoutNumbers(await list({ search: '111222' }))).toEqual([]);
+      });
+
+      it.each([
+        ['%', '12%45'],
+        ['_', '12_45'],
+      ])('«%s» в конце ищется буквально', async (needle, barcode) => {
+        const counterparty = await createCounterparty(context.app, 'Спецсимволы');
+        await createLabel(context.app, {
+          counterpartyId: counterparty.id,
+          layoutNumber: '1',
+          barcode,
+        });
+        await createLabel(context.app, {
+          counterpartyId: counterparty.id,
+          layoutNumber: '2',
+          barcode: '1234500',
+        });
+        expect(layoutNumbers(await list({ search: `${needle}45` }))).toEqual(['1']);
+      });
+    });
+
+    describe('фильтр counterpartyName', () => {
+      async function createHoldings() {
+        const holding = await createCounterparty(context.app, 'ЖК Холдинг');
+        const south = await createCounterparty(context.app, 'Холдинг Юг');
+        const other = await createCounterparty(context.app, 'Ромашка');
+        await createLabel(context.app, { counterpartyId: holding.id, layoutNumber: '1' });
+        await createLabel(context.app, { counterpartyId: south.id, layoutNumber: '2' });
+        await createLabel(context.app, { counterpartyId: other.id, layoutNumber: '3' });
+      }
+
+      it('по слову из середины названия без учёта регистра', async () => {
+        await createHoldings();
+        expect(layoutNumbers(await list({ counterpartyName: 'холдинг' }))).toEqual(['1', '2']);
+      });
+
+      it('по полному названию', async () => {
+        await createHoldings();
+        expect(layoutNumbers(await list({ counterpartyName: 'ЖК ХОЛДИНГ' }))).toEqual(['1']);
+      });
+
+      it('ничего не совпало — пустой список, а не все позиции', async () => {
+        await createHoldings();
+        const page = await list({ counterpartyName: 'Лютик' });
+        expect(page.total).toBe(0);
+      });
+
+      it('пустая строка — фильтра нет', async () => {
+        await createHoldings();
+        expect((await list({ counterpartyName: '' })).total).toBe(3);
+      });
+
+      it('вместе с поиском — оба условия сразу', async () => {
+        await createHoldings();
+        expect(layoutNumbers(await list({ counterpartyName: 'холдинг', search: '2' }))).toEqual([
+          '2',
+        ]);
+      });
+
+      it('«%» ищется буквально', async () => {
+        const hit = await createCounterparty(context.app, 'Скидка 100%');
+        const miss = await createCounterparty(context.app, 'Скидка 1000');
+        await createLabel(context.app, { counterpartyId: hit.id, layoutNumber: '1' });
+        await createLabel(context.app, { counterpartyId: miss.id, layoutNumber: '2' });
+        expect(layoutNumbers(await list({ counterpartyName: '%' }))).toEqual(['1']);
+      });
+
+      it('длиннее 200 символов — 400', async () => {
+        const response = await context.app.inject({
+          url: '/api/labels',
+          query: { counterpartyName: 'а'.repeat(201) },
+        });
+        expect(response.statusCode).toBe(400);
+      });
+
+      it('NUL не роняет запрос', async () => {
+        const response = await context.app.inject({
+          url: '/api/labels',
+          query: { counterpartyName: 'a\u0000b' },
+        });
+        expect(response.statusCode).toBeLessThan(500);
+      });
+    });
+
     it('фильтр по counterpartyId', async () => {
       const first = await createCounterparty(context.app, 'Первый');
       const second = await createCounterparty(context.app, 'Второй');
