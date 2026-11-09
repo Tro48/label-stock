@@ -48,7 +48,10 @@ function Invoke-Build([string]$Commit) {
   try {
     Invoke-Pnpm @('install', '--frozen-lockfile')
     Write-Step 'Собираем приложение'
-    Invoke-Pnpm @('build')
+    # Не через корневой «pnpm build»: он вызывает pnpm изнутри, а при запуске через corepack
+    # команды pnpm в PATH нет. Порядок тот же, что в корневом package.json.
+    Invoke-Pnpm @('--filter', '@label-stock/web', 'build')
+    Invoke-Pnpm @('--filter', '@label-stock/server', 'build')
   } finally {
     Pop-Location
   }
