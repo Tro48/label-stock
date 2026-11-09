@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      # Тесты сервера поднимают PostgreSQL через Testcontainers — Docker на раннере есть.
+      - run: pnpm test
+      - run: pnpm build
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Запуск приложения
+        run: |
+          printf 'POSTGRES_PASSWORD=ci%s\nAPP_PORT=8080\n' "$GITHUB_RUN_ID" > deploy/.env
+          docker compose -f deploy/docker-compose.yml up -d --build --wait
+      - run: pnpm --filter @label-stock/e2e exec playwright install --with-deps chromium
+      - run: pnpm e2e
+        env:
+          E2E_BASE_URL: http://localhost:8080
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report

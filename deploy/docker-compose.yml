@@ -1,0 +1,43 @@
+name: label-stock
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '5'
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: label_stock
+      POSTGRES_USER: label_stock
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Задайте POSTGRES_PASSWORD в deploy/.env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # Порт наружу не пробрасывается: БД видна только контейнеру приложения.
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U label_stock -d label_stock']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *logging
+
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://label_stock:${POSTGRES_PASSWORD}@postgres:5432/label_stock
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - '${APP_PORT:-8080}:3000'
+    logging: *logging
+
+volumes:
+  postgres-data:
