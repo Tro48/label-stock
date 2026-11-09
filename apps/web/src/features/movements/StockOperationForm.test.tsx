@@ -48,11 +48,11 @@ describe('StockOperationForm', () => {
     expect(requests[0]?.body).toEqual({ reason: 'consumption', delta: -5 });
   });
 
-  it('кнопка «Допечатка» — положительная дельта с датой и комментарием', async () => {
+  it('кнопка «Добавить» — положительная дельта с датой и комментарием', async () => {
     const { requests, onDone, user, amount } = setup();
     await user.type(amount, '500');
     await user.type(screen.getByRole('textbox', { name: 'Комментарий' }), '  тираж  ');
-    await user.click(screen.getByRole('button', { name: 'Допечатка' }));
+    await user.click(screen.getByRole('button', { name: 'Добавить' }));
     await waitFor(() => expect(onDone).toHaveBeenCalledWith('print', expect.anything()));
     expect(requests[0]?.body).toEqual({
       reason: 'print',
@@ -62,14 +62,18 @@ describe('StockOperationForm', () => {
     });
   });
 
-  it('кнопка «Инвентаризация» — setQuantity, 0 допустим', async () => {
-    const { requests, onDone, user, amount } = setup(() =>
-      jsonResponse(201, makeMovementResult({ quantity: 0 }, null)),
-    );
+  it('кнопок операций две: «Списать» и «Добавить», инвентаризации нет', () => {
+    setup();
+    const buttons = screen.getAllByRole('button').map((button) => button.textContent);
+    expect(buttons).toEqual(['Списать', 'Добавить']);
+  });
+
+  it('0 для «Добавить» — «Укажите количество больше нуля» без запроса', async () => {
+    const { fetchMock, user, amount } = setup();
     await user.type(amount, '0');
-    await user.click(screen.getByRole('button', { name: 'Инвентаризация' }));
-    await waitFor(() => expect(onDone).toHaveBeenCalledWith('inventory', expect.anything()));
-    expect(requests[0]?.body).toEqual({ reason: 'inventory', setQuantity: 0 });
+    await user.click(screen.getByRole('button', { name: 'Добавить' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Укажите количество больше нуля');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('422 — «Остаток не может уйти в минус» в role=alert', async () => {
@@ -132,7 +136,7 @@ describe('StockOperationForm', () => {
     );
     await user.type(amount, '3{Enter}');
     await waitFor(() => expect(screen.getByRole('button', { name: 'Списать' })).toBeDisabled());
-    await user.click(screen.getByRole('button', { name: 'Допечатка' }));
+    await user.click(screen.getByRole('button', { name: 'Добавить' }));
     expect(fetchMock).toHaveBeenCalledTimes(1);
     resolve(jsonResponse(201, makeMovementResult()));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Списать' })).toBeEnabled());

@@ -2,7 +2,7 @@ import type { CreateMovementInput, MovementResult } from '@label-stock/shared';
 import { formatQuantity } from '../../shared/format';
 import { quantityInputSchema } from '../labels/label-form-schema';
 
-export type StockOperation = 'consumption' | 'print' | 'inventory';
+export type StockOperation = 'consumption' | 'print';
 
 export interface StockOperationValues {
   amount: string;
@@ -22,9 +22,6 @@ export function buildMovementInput(
   const value = parsed.data;
   const commentValue = comment.trim() || undefined;
 
-  if (operation === 'inventory') {
-    return { ok: true, input: { reason: 'inventory', setQuantity: value, comment: commentValue } };
-  }
   if (value === 0) return { ok: false, error: 'Укажите количество больше нуля' };
   if (operation === 'consumption') {
     return { ok: true, input: { reason: 'consumption', delta: -value, comment: commentValue } };
@@ -51,7 +48,5 @@ export function describeOperationResult(operation: StockOperation, result: Movem
       return `Списано ${amount} шт., ${remainder}`;
     case 'print':
       return `Допечатано ${amount} шт., ${remainder}`;
-    case 'inventory':
-      return `Инвентаризация: ${remainder}`;
   }
 }

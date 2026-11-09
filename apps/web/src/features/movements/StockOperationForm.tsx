@@ -15,8 +15,7 @@ interface StockOperationFormProps {
 
 const OPERATION_BUTTONS: readonly { operation: StockOperation; text: string }[] = [
   { operation: 'consumption', text: 'Списать' },
-  { operation: 'print', text: 'Допечатка' },
-  { operation: 'inventory', text: 'Инвентаризация' },
+  { operation: 'print', text: 'Добавить' },
 ];
 
 function isStockOperation(value: string | undefined): value is StockOperation {
@@ -74,7 +73,6 @@ export function StockOperationForm({ label, onDone }: StockOperationFormProps) {
           aria-invalid={Boolean(error)}
           aria-describedby={error ? amountErrorId : undefined}
         />
-        <p className="field__hint">Для инвентаризации — фактический остаток.</p>
         {error && (
           <p id={amountErrorId} role="alert" className="field__error">
             {error}

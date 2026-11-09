@@ -37,20 +37,6 @@ describe('buildMovementInput', () => {
     });
   });
 
-  it('инвентаризация — setQuantity, без дельты', () => {
-    expect(buildMovementInput('inventory', values({ amount: '1200' }))).toEqual({
-      ok: true,
-      input: { reason: 'inventory', setQuantity: 1200, comment: undefined },
-    });
-  });
-
-  it('инвентаризация с 0 — ок', () => {
-    expect(buildMovementInput('inventory', values({ amount: '0' }))).toEqual({
-      ok: true,
-      input: { reason: 'inventory', setQuantity: 0, comment: undefined },
-    });
-  });
-
   it.each(['consumption', 'print'] as const)('0 для %s — ошибка', (operation) => {
     expect(buildMovementInput(operation, values({ amount: '0' }))).toEqual({
       ok: false,
@@ -58,7 +44,7 @@ describe('buildMovementInput', () => {
     });
   });
 
-  it.each(['consumption', 'print', 'inventory'] as const)(
+  it.each(['consumption', 'print'] as const)(
     'пробелы вокруг числа и ведущие нули допустимы (%s)',
     (operation) => {
       const result = buildMovementInput(operation, values({ amount: ' 007 ' }));
@@ -77,7 +63,7 @@ describe('buildMovementInput', () => {
     ['экспонента', '1e3'],
     ['плюс', '+5'],
   ])('%s количество — ошибка «Только целое число не меньше нуля»', (_name, amount) => {
-    for (const operation of ['consumption', 'print', 'inventory'] as StockOperation[]) {
+    for (const operation of ['consumption', 'print'] as StockOperation[]) {
       expect(buildMovementInput(operation, values({ amount }))).toEqual({
         ok: false,
         error: 'Только целое число не меньше нуля',
@@ -101,7 +87,7 @@ describe('buildMovementInput', () => {
   it('комментарий обрезается, из одних пробелов — undefined', () => {
     const trimmed = buildMovementInput('consumption', values({ comment: '  брак  ' }));
     expect(trimmed.ok && trimmed.input.comment).toBe('брак');
-    const blank = buildMovementInput('inventory', values({ comment: ' \n\t ' }));
+    const blank = buildMovementInput('print', values({ comment: ' \n\t ' }));
     expect(blank.ok && blank.input.comment).toBeUndefined();
   });
 });
@@ -124,17 +110,9 @@ describe('describeOperationResult', () => {
     );
   });
 
-  it('инвентаризация с изменением', () => {
-    const result = makeMovementResult(
-      { quantity: 0 },
-      makeMovement({ delta: -5, reason: 'inventory' }),
-    );
-    expect(describeOperationResult('inventory', result)).toBe('Инвентаризация: остаток 0 шт.');
-  });
-
   it('movement=null — остаток не изменился', () => {
     const result = makeMovementResult({ quantity: 1_200 }, null);
-    expect(describeOperationResult('inventory', result)).toBe(
+    expect(describeOperationResult('consumption', result)).toBe(
       `Остаток не изменился: остаток 1${NBSP}200 шт.`,
     );
   });

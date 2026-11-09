@@ -21,6 +21,22 @@ function DialogHost({ withAutofocus = false }: { withAutofocus?: boolean }) {
   );
 }
 
+const DIALOG_RECT = { left: 100, top: 100, right: 500, bottom: 400 };
+const OUTSIDE = { clientX: 20, clientY: 20 };
+const INSIDE = { clientX: 300, clientY: 250 };
+
+function renderWithBackdrop() {
+  const onClose = vi.fn();
+  render(
+    <Dialog title="Окно" onClose={onClose}>
+      <input aria-label="Поле" />
+    </Dialog>,
+  );
+  const dialog = screen.getByRole('dialog');
+  vi.spyOn(dialog, 'getBoundingClientRect').mockReturnValue(DIALOG_RECT as DOMRect);
+  return { onClose, dialog };
+}
+
 describe('Dialog', () => {
   it('открывается модально, заголовок связан через aria-labelledby', () => {
     render(
@@ -149,5 +165,71 @@ describe('Dialog', () => {
     unmount();
     expect(closeSpy).toHaveBeenCalledTimes(1);
     closeSpy.mockRestore();
+  });
+
+  describe('клик по подложке', () => {
+    it('нажатие и отпускание снаружи окна закрывают его', () => {
+      const { onClose, dialog } = renderWithBackdrop();
+      fireEvent.pointerDown(dialog, OUTSIDE);
+      fireEvent.click(dialog, OUTSIDE);
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('клик по содержимому окна не закрывает', () => {
+      const { onClose } = renderWithBackdrop();
+      const field = screen.getByRole('textbox', { name: 'Поле' });
+      fireEvent.pointerDown(field, INSIDE);
+      fireEvent.click(field, INSIDE);
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('выделение начато в поле и отпущено за краем окна — не закрывает', () => {
+      const { onClose, dialog } = renderWithBackdrop();
+      fireEvent.pointerDown(screen.getByRole('textbox', { name: 'Поле' }), INSIDE);
+      fireEvent.click(dialog, OUTSIDE);
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('нажатие снаружи, отпускание внутри границ окна — не закрывает', () => {
+      const { onClose, dialog } = renderWithBackdrop();
+      fireEvent.pointerDown(dialog, OUTSIDE);
+      fireEvent.click(dialog, INSIDE);
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('click без pointerdown (программный или с клавиатуры) — не закрывает', () => {
+      const { onClose, dialog } = renderWithBackdrop();
+      fireEvent.click(dialog, OUTSIDE);
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('флаг нажатия сбрасывается после клика: следующий одиночный click не закрывает', () => {
+      const { onClose, dialog } = renderWithBackdrop();
+      fireEvent.pointerDown(dialog, OUTSIDE);
+      fireEvent.click(dialog, OUTSIDE);
+      fireEvent.click(dialog, OUTSIDE);
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('вызывает актуальный onClose после перерендера', () => {
+      const firstOnClose = vi.fn();
+      const nextOnClose = vi.fn();
+      const { rerender } = render(
+        <Dialog title="Окно" onClose={firstOnClose}>
+          <p />
+        </Dialog>,
+      );
+      rerender(
+        <Dialog title="Окно" onClose={nextOnClose}>
+          <p />
+        </Dialog>,
+      );
+      const dialog = screen.getByRole('dialog');
+      vi.spyOn(dialog, 'getBoundingClientRect').mockReturnValue(DIALOG_RECT as DOMRect);
+      fireEvent.pointerDown(dialog, OUTSIDE);
+      fireEvent.click(dialog, OUTSIDE);
+      expect(firstOnClose).not.toHaveBeenCalled();
+      expect(nextOnClose).toHaveBeenCalledTimes(1);
+    });
   });
 });

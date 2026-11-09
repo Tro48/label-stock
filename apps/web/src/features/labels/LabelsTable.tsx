@@ -54,10 +54,12 @@ export function LabelsTable({
 
   return (
     <div className="table-scroll">
-      <table className="table">
+      {/* Раскладка гридом, а Safari у таблицы с display: grid теряет табличные роли —
+          поэтому они продублированы явно. */}
+      <table role="table" className="table table--grid labels-table">
         <caption className="table__caption">{caption}</caption>
-        <thead>
-          <tr>
+        <thead role="rowgroup">
+          <tr role="row">
             {COLUMNS.map((column) => {
               const active = sortState.sort === column.field;
               const ariaSort = active
@@ -69,6 +71,7 @@ export function LabelsTable({
                 <th
                   key={column.field}
                   scope="col"
+                  role="columnheader"
                   aria-sort={ariaSort}
                   className={column.numeric ? 'table__cell--numeric' : undefined}
                 >
@@ -85,21 +88,26 @@ export function LabelsTable({
                 </th>
               );
             })}
-            <th scope="col">Действия</th>
+            <th scope="col" role="columnheader">
+              Действия
+            </th>
           </tr>
         </thead>
-        <tbody>
+        <tbody role="rowgroup">
           {labels.map((label) => (
-            <tr key={label.id}>
+            <tr key={label.id} role="row">
               {COLUMNS.map((column) => (
                 <td
                   key={column.field}
+                  role="cell"
                   className={column.numeric ? 'table__cell--numeric' : undefined}
                 >
                   {column.render(label)}
                 </td>
               ))}
-              <td className="table__actions">{renderActions(label)}</td>
+              <td role="cell" className="table__actions">
+                {renderActions(label)}
+              </td>
             </tr>
           ))}
         </tbody>

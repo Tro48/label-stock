@@ -184,6 +184,52 @@ p {
   gap: var(--space-4);
 }
 
+/*
+ * Экран на всю высоту окна: шапка и фильтры стоят на месте, прокручивается только таблица.
+ * На низком окне (телефон, зум 200%+) фильтры заняли бы почти всю высоту и списку не осталось бы
+ * места, поэтому там страница прокручивается целиком, как обычно.
+ */
+@media (min-height: 36rem) {
+  #root {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+  }
+
+  .app-header {
+    flex: none;
+  }
+
+  .app-main {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    padding-bottom: var(--space-4);
+  }
+
+  .screen {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .screen > * {
+    flex: none;
+  }
+
+  .screen > .table-scroll {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: auto;
+    /* Последние строки не прячутся под всплывающими уведомлениями в правом нижнем углу. */
+    padding-bottom: 6rem;
+    /* При переходе по Tab строка не уезжает под прилипший заголовок таблицы. */
+    scroll-padding-top: 3rem;
+  }
+}
+
 /* Панель поиска и фильтров */
 .toolbar {
   display: grid;
@@ -385,6 +431,48 @@ p {
 .table .table__cell--numeric {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Таблица на гриде: строка — подсетка общей сетки, поэтому колонки совпадают во всех строках,
+ * а ширины задаются шаблоном, а не содержимым первой строки.
+ */
+.table--grid {
+  display: grid;
+}
+
+.table--grid > caption {
+  grid-column: 1 / -1;
+}
+
+.table--grid > thead,
+.table--grid > tbody {
+  display: contents;
+}
+
+.table--grid tr {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.table--grid th,
+.table--grid td {
+  border-bottom: none;
+}
+
+/* Заголовок прилипает, когда прокручивается контейнер .table-scroll. */
+.table--grid > thead > tr {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-surface);
+}
+
+.labels-table {
+  grid-template-columns: minmax(10rem, 2fr) minmax(7rem, 1fr) minmax(9rem, 1fr) auto auto auto;
 }
 
 .table__sort {
