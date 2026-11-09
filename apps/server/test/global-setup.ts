@@ -14,7 +14,9 @@ export const MIGRATIONS_DIR = fileURLToPath(new URL('../drizzle', import.meta.ur
 let container: StartedPostgreSqlContainer | undefined;
 
 export async function setup(project: TestProject): Promise<void> {
-  container = await new PostgreSqlContainer('postgres:17-alpine').start();
+  // TEST_POSTGRES_IMAGE позволяет проверить совместимость с другой версией PostgreSQL.
+  const image = process.env.TEST_POSTGRES_IMAGE ?? 'postgres:17-alpine';
+  container = await new PostgreSqlContainer(image).start();
   const databaseUrl = container.getConnectionUri();
   const pool = createPool({ connectionString: databaseUrl, max: 2, statementTimeoutMs: 10_000 });
   try {

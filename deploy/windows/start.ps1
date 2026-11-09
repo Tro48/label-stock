@@ -1,87 +1,14 @@
-﻿# Запуск приложения на Windows без Docker: сборка при необходимости, запуск в фоне, проверка здоровья.
-# Параметры: -Rebuild — пересобрать принудительно.
+﻿# Запуск на Windows без Docker: встроенный PostgreSQL, сборка при необходимости, приложение в фоне.
+# Параметры: -Rebuild — пересобрать принудительно. Перед первым запуском нужен setup.cmd.
 param([switch]$Rebuild)
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'common.ps1')
+. (Join-Path $PSScriptRoot 'build-tools.ps1')
+. (Join-Path $PSScriptRoot 'postgres-tools.ps1')
 
-$MinNodeMajor = 22
 # Приложение само ждёт PostgreSQL до минуты (DB_CONNECT_RETRIES × DB_CONNECT_RETRY_DELAY_MS).
 $HealthTimeoutSeconds = 90
-$MaxLogBytes = 10MB
-
-function Assert-Node {
-  if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-    throw "Node.js не найден. Установите Node.js $MinNodeMajor LTS с https://nodejs.org и откройте окно заново."
-  }
-  $major = [int](& node -p "process.versions.node.split('.')[0]")
-  if ($major -lt $MinNodeMajor) {
-    throw "Нужен Node.js $MinNodeMajor или новее, установлен $(& node --version)."
-  }
-}
-
-function Assert-EnvFile {
-  if (Test-Path $EnvFile) { return }
-  Copy-Item $EnvTemplate $EnvFile
-  throw "Создан файл $EnvFile из шаблона. Впишите в него пароль PostgreSQL (DATABASE_URL) и запустите снова."
-}
-
-function Get-SourceCommit {
-  if (-not (Get-Command git -ErrorAction SilentlyContinue)) { return 'unknown' }
-  # В Windows PowerShell 5.1 перенаправленный stderr при ErrorActionPreference=Stop становится
-  # исключением; папка без .git — штатный случай, поэтому на время вызова ослабляем режим.
-  $previousPreference = $ErrorActionPreference
-  $ErrorActionPreference = 'Continue'
-  try {
-    $commit = & git -C $Root rev-parse HEAD 2>$null
-  } finally {
-    $ErrorActionPreference = $previousPreference
-  }
-  if ($LASTEXITCODE -ne 0 -or -not $commit) { return 'unknown' }
-  return "$commit".Trim()
-}
-
-# Пересобираем, если сборки нет или после git pull изменился коммит.
-function Test-BuildNeeded([string]$Commit) {
-  if ($Rebuild) { return $true }
-  if (-not (Test-Path (Join-Path $ServerDir 'dist\main.js'))) { return $true }
-  if (-not (Test-Path (Join-Path $WebDist 'index.html'))) { return $true }
-  if (-not (Test-Path $BuildStampFile)) { return $true }
-  return (Get-Content $BuildStampFile -Raw).Trim() -ne $Commit
-}
-
-function Invoke-Pnpm([string[]]$Arguments) {
-  if (Get-Command corepack -ErrorAction SilentlyContinue) {
-    # corepack входит в Node.js 22 и запускает pnpm версии из package.json без глобальной установки.
-    # Без этой переменной первый запуск спросит разрешение на скачивание и зависнет в Планировщике.
-    $env:COREPACK_ENABLE_DOWNLOAD_PROMPT = '0'
-    & corepack pnpm @Arguments
-  } elseif (Get-Command pnpm -ErrorAction SilentlyContinue) {
-    & pnpm @Arguments
-  } else {
-    throw 'Не найден ни corepack, ни pnpm. Установите pnpm: npm install -g pnpm'
-  }
-  if ($LASTEXITCODE -ne 0) { throw "Команда «pnpm $($Arguments -join ' ')» завершилась с ошибкой." }
-}
-
-function Invoke-Build([string]$Commit) {
-  Write-Step 'Устанавливаем зависимости'
-  Push-Location $Root
-  try {
-    Invoke-Pnpm @('install', '--frozen-lockfile')
-    Write-Step 'Собираем приложение'
-    Invoke-Pnpm @('build')
-  } finally {
-    Pop-Location
-  }
-  Set-Content -Path $BuildStampFile -Value $Commit -Encoding ASCII
-}
-
-function Move-OldLog([string]$Path) {
-  if ((Test-Path $Path) -and (Get-Item $Path).Length -gt $MaxLogBytes) {
-    Move-Item $Path "$Path.1" -Force
-  }
-}
 
 function Start-App {
   $outLog = Join-Path $LogDir 'app.log'
@@ -117,7 +44,11 @@ function Wait-Healthy($Process, [string]$Port) {
 
 try {
   New-Item -ItemType Directory -Force -Path $RunDir, $LogDir | Out-Null
+  Assert-EnvFile
+  Assert-PostgresReady
   $port = Get-EnvValue 'PORT' '3000'
+  # PostgreSQL поднимаем и тогда, когда приложение уже работает: вдруг база остановилась отдельно.
+  Start-Postgres (Get-DatabaseSettings) | Out-Null
 
   $running = Get-RunningApp
   if ($running) {
@@ -126,17 +57,15 @@ try {
   }
 
   Assert-Node
-  Assert-EnvFile
   $commit = Get-SourceCommit
-  if (Test-BuildNeeded $commit) { Invoke-Build $commit }
+  if ($Rebuild -or (Test-BuildNeeded $commit)) { Invoke-Build $commit }
 
   Write-Step 'Запускаем приложение'
   $process = Start-App
   if (-not (Wait-Healthy $process $port)) {
     Write-Failure "приложение не ответило за $HealthTimeoutSeconds с. Последние строки журнала ошибок:"
     Get-Content (Join-Path $LogDir 'app.err.log') -Tail 20 -ErrorAction SilentlyContinue
-    if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
-    Remove-Item $PidFile -ErrorAction SilentlyContinue
+    Stop-App
     exit 1
   }
 

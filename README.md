@@ -50,17 +50,15 @@ cd /opt/label-stock && git pull && docker compose -f deploy/docker-compose.yml u
 
 ## Запуск на Windows без Docker
 
-Нужны Node.js 22 LTS (с nodejs.org) и PostgreSQL 17 (установщик с postgresql.org ставит его службой с автозапуском).
+Нужны Windows 10 (1803+) или 11, Node.js 22 LTS с nodejs.org и Microsoft Visual C++ Redistributable x64 (https://aka.ms/vs/17/release/vc_redist.x64.exe, обычно уже стоит). PostgreSQL отдельно ставить не нужно: `setup.cmd` скачивает его из npm (пакет `@embedded-postgres/windows-x64`, PostgreSQL 17) и держит данные в папке проекта.
 
-1. В `psql` или pgAdmin создать пользователя и базу:
-   ```sql
-   CREATE USER label_stock WITH PASSWORD 'пароль-из-латиницы-и-цифр';
-   CREATE DATABASE label_stock OWNER label_stock;
-   ```
-2. Скачать проект: `git clone https://github.com/Tro48/label-stock.git C:\label-stock` (или ZIP с GitHub).
-3. Запустить `start.cmd`. В первый раз он создаст `.env` из `deploy\windows\env.example` и попросит вписать пароль в `DATABASE_URL`. После этого запустить `start.cmd` ещё раз.
+1. Скачать проект: `git clone https://github.com/Tro48/label-stock.git C:\label-stock` (или ZIP с GitHub).
+2. Запустить `setup.cmd`. Он проверит окружение, скачает PostgreSQL в `vendor\postgres`, создаст `.env` со случайным паролем базы, соберёт проект и создаст базу в `data\postgres`. Повторный запуск безопасен.
+3. Запустить `start.cmd`. Он поднимает PostgreSQL (порт 5433, только `127.0.0.1`) и приложение. Окно можно закрыть, оба работают в фоне.
 
-`start.cmd` при первом запуске и после каждого `git pull` сам ставит зависимости и пересобирает проект; принудительно — `start.cmd -Rebuild`. Приложение работает в фоне, окно можно закрыть. Журналы — в `logs\`, остановка — `stop.cmd`.
+`stop.cmd` останавливает приложение и PostgreSQL. После `git pull` `start.cmd` сам пересобирает проект; принудительно — `start.cmd -Rebuild`. Если после обновления `start.cmd` просит запустить `setup.cmd` — значит, сменилась версия PostgreSQL. Журналы — в `logs\`.
+
+Папка `data\postgres` — это вся база. Не удаляйте её и не удаляйте папку проекта целиком при переустановке: сначала бэкап.
 
 Доступ из локальной сети — разрешить порт в брандмауэре (PowerShell от администратора, один раз):
 
@@ -68,19 +66,28 @@ cd /opt/label-stock && git pull && docker compose -f deploy/docker-compose.yml u
 New-NetFirewallRule -DisplayName "Остатки этикетки" -Direction Inbound -Protocol TCP -LocalPort 8080 -Action Allow
 ```
 
-Автозапуск после перезагрузки (от администратора, путь — свой):
+Автозапуск после перезагрузки (от администратора; задача работает от вашей учётной записи, Windows спросит её пароль):
 
 ```bat
-schtasks /Create /TN "LabelStock" /TR "C:\label-stock\start.cmd" /SC ONSTART /RU SYSTEM
+schtasks /Create /TN "LabelStock" /TR "C:\label-stock\start.cmd" /SC ONSTART /RU "%USERDOMAIN%\%USERNAME%" /RP *
 ```
 
-Бэкап без Docker — `pg_dump` из папки PostgreSQL, например в Планировщике заданий раз в сутки:
+### Бэкап на Windows
+
+`backup.cmd` останавливает приложение и PostgreSQL на несколько секунд, упаковывает `data\postgres` в `backups\label-stock_<дата>.tar.gz`, запускает всё обратно и хранит 14 последних архивов. Папку задаёт `BACKUP_DIR` в `.env` (можно сетевую) или параметр: `backup.cmd -Destination D:\backup -Keep 30`. Раз в сутки ночью:
 
 ```bat
-"C:\Program Files\PostgreSQL\17\bin\pg_dump.exe" -U label_stock -d label_stock -Fc -f D:\backup\label-stock_%DATE:~-4%-%DATE:~3,2%-%DATE:~0,2%.dump
+schtasks /Create /TN "LabelStockBackup" /TR "C:\label-stock\backup.cmd" /SC DAILY /ST 03:15 /RU "%USERDOMAIN%\%USERNAME%" /RP *
 ```
 
-Пароль для `pg_dump` — в `%APPDATA%\postgresql\pgpass.conf` строкой `localhost:5432:label_stock:label_stock:пароль`.
+Восстановление:
+
+```bat
+stop.cmd
+ren data\postgres postgres-old
+tar -xzf backups\label-stock_<дата>.tar.gz -C data
+start.cmd
+```
 
 ## Деплой на сервер
 

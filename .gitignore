@@ -9,3 +9,6 @@ test-results/
 .claude/
 run/
 logs/
+/data/
+/vendor/
+/backups/
