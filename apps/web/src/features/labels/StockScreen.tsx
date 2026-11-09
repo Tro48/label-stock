@@ -80,11 +80,11 @@ export function StockScreen() {
     });
   };
 
-  const handleSaved = (label: Label, created: boolean) => {
+  // Фильтры не трогаем: список остаётся полным, новая позиция появится в нём после перечитывания.
+  const handleSaved = (_label: Label, created: boolean) => {
     setModal(null);
     setScanState({ kind: 'idle' });
     notify(created ? 'Позиция создана' : 'Изменения сохранены');
-    if (created) query.setSearch(label.layoutNumber ?? label.barcode ?? '');
   };
 
   return (

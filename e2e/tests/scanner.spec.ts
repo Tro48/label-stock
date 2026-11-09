@@ -53,6 +53,7 @@ test('скан → не найдено → создание с заполнен�
 
   await expect(form).toBeHidden();
   await expect(page.getByText('Позиция создана')).toBeVisible();
+  await page.getByRole('searchbox').fill(barcode);
   await expect(page.getByRole('cell', { name: barcode, exact: true })).toBeVisible();
 });
 

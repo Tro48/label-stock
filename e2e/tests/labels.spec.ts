@@ -71,6 +71,11 @@ test('весь путь с клавиатуры: создать позицию �
   await expect(form).toBeHidden();
   await expect(page.getByText('Позиция создана')).toBeVisible();
 
+  // После создания фильтр не подставляется: список остаётся полным.
+  const search = page.getByRole('searchbox');
+  await expect(search).toHaveValue('');
+  // В базе стенда сотни позиций: новую находим поиском, как это сделал бы кладовщик.
+  await search.fill(layoutNumber);
   const row = page.getByRole('row').filter({ hasText: layoutNumber });
   const changeButton = row.getByRole('button', { name: /Изменить остаток/ });
   await changeButton.focus();
