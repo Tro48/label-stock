@@ -11,6 +11,13 @@ const DUPLICATE_MESSAGES: Readonly<Record<UniqueLabelField, string>> = {
   barcode: 'Штрихкод уже занят другой позицией',
 };
 
+/** Текст про занятый номер или штрихкод, если ошибка — нарушение уникальности позиции. */
+export function describeUniqueViolation(error: unknown): string | undefined {
+  const constraint = uniqueViolationConstraint(error);
+  const field = constraint ? FIELD_BY_CONSTRAINT[constraint] : undefined;
+  return field ? DUPLICATE_MESSAGES[field] : undefined;
+}
+
 export interface UniqueValues {
   layoutNumber?: string | null;
   barcode?: string | null;

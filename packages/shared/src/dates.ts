@@ -21,6 +21,21 @@ export function todayIsoDate(now: Date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+const RU_DATE_PATTERN = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/;
+
+/**
+ * Дата из ячейки Excel: `01.11.2026`, `1.11.2026` или `2026-11-01` → `2026-11-01`.
+ * null — не дата или несуществующий день.
+ */
+export function parseRuOrIsoDate(value: string): string | null {
+  const trimmed = value.trim();
+  const ruMatch = RU_DATE_PATTERN.exec(trimmed);
+  const iso = ruMatch
+    ? `${ruMatch[3]}-${ruMatch[2]!.padStart(2, '0')}-${ruMatch[1]!.padStart(2, '0')}`
+    : trimmed;
+  return isValidIsoDate(iso) ? iso : null;
+}
+
 /** `2026-11-01` → `01.11.2026`. */
 export function formatIsoDateRu(value: string): string {
   const match = ISO_DATE_PATTERN.exec(value);

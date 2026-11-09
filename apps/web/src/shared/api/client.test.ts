@@ -171,3 +171,57 @@ describe('errorMessage', () => {
     },
   );
 });
+
+describe('apiRequest: rawBody', () => {
+  it('тело уходит как есть, Content-Type — из rawBody, а не JSON', async () => {
+    const fetchMock = stubFetch(async () => jsonResponse(200, { ok: true }));
+    const csv = 'Контрагент;Остаток\r\n"ООО ""Ромашка""";1\r\n';
+    await apiRequest('/import.csv', {
+      method: 'POST',
+      params: { dryRun: true },
+      rawBody: { content: csv, contentType: 'text/csv; charset=utf-8' },
+    });
+    expect(fetchMock).toHaveBeenCalledWith('/api/import.csv?dryRun=true', {
+      method: 'POST',
+      signal: null,
+      headers: { 'Content-Type': 'text/csv; charset=utf-8' },
+      body: csv,
+    });
+  });
+
+  it('rawBody важнее body: JSON не сериализуется', async () => {
+    const fetchMock = stubFetch(async () => jsonResponse(200, {}));
+    await apiRequest('/x', {
+      method: 'POST',
+      body: { ignored: true },
+      rawBody: { content: 'raw', contentType: 'text/plain' },
+    });
+    const init = fetchMock.mock.calls[0]?.[1];
+    expect(init?.headers).toEqual({ 'Content-Type': 'text/plain' });
+    expect(init?.body).toBe('raw');
+  });
+
+  it('пустая строка в rawBody отправляется как пустое тело, а не null', async () => {
+    const fetchMock = stubFetch(async () => jsonResponse(200, {}));
+    await apiRequest('/x', { method: 'POST', rawBody: { content: '', contentType: 'text/csv' } });
+    const init = fetchMock.mock.calls[0]?.[1];
+    expect(init?.body).toBe('');
+    expect(init?.headers).toEqual({ 'Content-Type': 'text/csv' });
+  });
+
+  it('ошибка сервера на rawBody-запросе — обычный ApiError', async () => {
+    stubFetch(async () => errorResponse(413, 'VALIDATION_ERROR', 'Слишком большое тело'));
+    const error = await catchError(
+      apiRequest('/import.csv', {
+        method: 'POST',
+        rawBody: { content: 'x', contentType: 'text/csv' },
+      }),
+    );
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({
+      status: 413,
+      code: 'VALIDATION_ERROR',
+      message: 'Слишком большое тело',
+    });
+  });
+});

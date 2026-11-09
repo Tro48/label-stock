@@ -35,7 +35,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Запуск приложения
         run: |
-          printf 'POSTGRES_PASSWORD=ci%s\nAPP_PORT=8080\n' "$GITHUB_RUN_ID" > deploy/.env
+          printf 'POSTGRES_PASSWORD=ci%s\nAPP_PORT=8080\nRATE_LIMIT_MAX_PER_MINUTE=100000\n' "$GITHUB_RUN_ID" > deploy/.env
           docker compose -f deploy/docker-compose.yml up -d --build --wait
       - run: pnpm --filter @label-stock/e2e exec playwright install --with-deps chromium
       - run: pnpm e2e

@@ -1,9 +1,9 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
-import { formatIsoDateRu, todayIsoDate } from '@label-stock/shared';
+import { CSV_COLUMNS, formatIsoDateRu, todayIsoDate } from '@label-stock/shared';
 import type { LabelsRepository } from '../labels/labels.repository';
 import { toCsv } from './csv';
 
-const HEADER = ['Контрагент', '№ макета', 'Штрихкод', 'Дата печати', 'Остаток', 'Комментарий'];
+const HEADER = Object.values(CSV_COLUMNS);
 
 export const exportRoutes =
   (labels: LabelsRepository): FastifyPluginAsyncZod =>

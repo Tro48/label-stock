@@ -33,21 +33,31 @@ export function buildUrl(path: string, params?: QueryParams): string {
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   body?: unknown;
+  /** Тело как есть, без JSON-сериализации: например, загружаемый CSV. */
+  rawBody?: { content: string; contentType: string };
   params?: QueryParams;
   signal?: AbortSignal;
 }
 
+function encodeBody(
+  body: unknown,
+  rawBody: RequestOptions['rawBody'],
+): Pick<RequestInit, 'headers' | 'body'> {
+  if (rawBody) return { headers: { 'Content-Type': rawBody.contentType }, body: rawBody.content };
+  if (body === undefined) return { headers: {}, body: null };
+  return { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+}
+
 export async function apiRequest<Result>(
   path: string,
-  { method = 'GET', body, params, signal }: RequestOptions = {},
+  { method = 'GET', body, rawBody, params, signal }: RequestOptions = {},
 ): Promise<Result> {
   let response: Response;
   try {
     response = await fetch(buildUrl(`/api${path}`, params), {
       method,
       signal: signal ?? null,
-      headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
-      body: body === undefined ? null : JSON.stringify(body),
+      ...encodeBody(body, rawBody),
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error;

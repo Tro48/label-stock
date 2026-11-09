@@ -36,6 +36,13 @@ export function registerErrorHandler(app: FastifyInstance): void {
       } satisfies ErrorResponse);
     }
 
+    if (error.statusCode === 413) {
+      return reply.status(413).send({
+        code: ERROR_CODES.validation,
+        message: 'Слишком большой запрос: разбейте файл на части',
+      } satisfies ErrorResponse);
+    }
+
     // Ошибки самого Fastify с 4xx (битый JSON, слишком большое тело) безопасно отдать как есть.
     if (error.statusCode !== undefined && error.statusCode >= 400 && error.statusCode < 500) {
       return reply.status(error.statusCode).send({

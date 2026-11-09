@@ -1,6 +1,6 @@
 # Учёт остатков этикетки
 
-Веб-приложение для локальной сети: таблица остатков, сканер штрихкодов, журнал движений, CSV для Excel. План и принятые решения — в [PLAN.md](PLAN.md), инструкция для пользователей — в [docs/user-guide.md](docs/user-guide.md).
+Веб-приложение для локальной сети: таблица остатков, сканер штрихкодов, журнал движений, выгрузка и загрузка CSV для Excel, светлая и тёмная тема. План и принятые решения — в [PLAN.md](PLAN.md), инструкция для пользователей — в [docs/user-guide.md](docs/user-guide.md).
 
 ## Структура
 
@@ -32,6 +32,21 @@ E2E_BASE_URL=http://localhost:8080 pnpm e2e   # против запущенно�
 Тесты сервера сами поднимают PostgreSQL через Testcontainers, нужен запущенный Docker.
 
 Миграции: поменять `apps/server/src/db/schema.ts`, затем `pnpm --filter @label-stock/server db:generate --name <что-изменилось>`.
+
+## Загрузка из CSV
+
+`POST /api/import.csv` (тело — сам CSV, `Content-Type: text/csv`), `?dryRun=true` — только проверить. Формат как у `GET /api/export.csv`. Загрузка атомарная: при любой ошибке строки ничего не записывается, ответ содержит ошибки по номерам строк. Подробности для пользователей — в `docs/user-guide.md`.
+
+## Обновление на сервере
+
+Репозиторий публичный, клонируется без авторизации:
+
+```sh
+git clone https://github.com/Tro48/label-stock.git /opt/label-stock   # первый раз
+cd /opt/label-stock && git pull && docker compose -f deploy/docker-compose.yml up -d --build
+```
+
+Миграции применяются при старте, данные в томе `postgres-data` сохраняются.
 
 ## Деплой на сервер
 

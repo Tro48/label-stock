@@ -23,7 +23,63 @@
   --space-4: 1rem;
   --space-6: 1.5rem;
   --font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --color-on-primary: #ffffff;
+  --color-on-danger: #ffffff;
+  --color-warning-border: #8a6100;
+  --color-notification-bg: #1f1f1f;
+  --color-notification-text: #ffffff;
   color-scheme: light;
+}
+
+/*
+ * Тёмная тема: по настройке системы, если пользователь не выбрал светлую явно,
+ * и по явному выбору (data-theme на <html>). Блоки одинаковые — CSS не умеет объединять
+ * media-запрос с селектором атрибута.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --color-bg: #121417;
+    --color-surface: #1d2025;
+    --color-text: #e6e8eb; /* 15.6:1 на фоне */
+    --color-text-muted: #b4b9c0; /* 9.6:1 */
+    --color-border: #8b929b; /* 5.6:1 к фону, 5.0:1 к поверхности */
+    --color-border-subtle: #3a3f46;
+    --color-primary: #8ab4f8; /* 8.6:1; текст на нём тёмный */
+    --color-primary-hover: #aecbfa;
+    --color-on-primary: #0b1a33; /* 8.0:1 на primary */
+    --color-danger: #f28b82; /* 7.5:1 */
+    --color-danger-hover: #f6aea9;
+    --color-on-danger: #3b0a07;
+    --color-warning-bg: #3d3200;
+    --color-warning-border: #e0b100;
+    --color-error-bg: #3c1715;
+    --color-focus: #8ab4f8;
+    --color-notification-bg: #e6e8eb;
+    --color-notification-text: #121417;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --color-bg: #121417;
+  --color-surface: #1d2025;
+  --color-text: #e6e8eb; /* 15.6:1 на фоне */
+  --color-text-muted: #b4b9c0; /* 9.6:1 */
+  --color-border: #8b929b; /* 5.6:1 к фону, 5.0:1 к поверхности */
+  --color-border-subtle: #3a3f46;
+  --color-primary: #8ab4f8; /* 8.6:1; текст на нём тёмный */
+  --color-primary-hover: #aecbfa;
+  --color-on-primary: #0b1a33; /* 8.0:1 на primary */
+  --color-danger: #f28b82; /* 7.5:1 */
+  --color-danger-hover: #f6aea9;
+  --color-on-danger: #3b0a07;
+  --color-warning-bg: #3d3200;
+  --color-warning-border: #e0b100;
+  --color-error-bg: #3c1715;
+  --color-focus: #8ab4f8;
+  --color-notification-bg: #e6e8eb;
+  --color-notification-text: #121417;
+  color-scheme: dark;
 }
 
 *,
@@ -71,7 +127,7 @@ p {
   top: -10rem;
   padding: var(--space-2) var(--space-4);
   background: var(--color-primary);
-  color: #ffffff;
+  color: var(--color-on-primary);
   border-radius: var(--radius);
   z-index: 10;
 }
@@ -232,7 +288,7 @@ p {
   padding: var(--space-2) var(--space-4);
   font: inherit;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--color-on-primary);
   background: var(--color-primary);
   border: 1px solid var(--color-primary);
   border-radius: var(--radius);
@@ -277,6 +333,7 @@ p {
 }
 
 .button--danger {
+  color: var(--color-on-danger);
   background: var(--color-danger);
   border-color: var(--color-danger);
 }
@@ -381,7 +438,7 @@ p {
 
 .alert--warning {
   background: var(--color-warning-bg);
-  border-left-color: #8a6100;
+  border-left-color: var(--color-warning-border);
 }
 
 .empty-state {
@@ -408,6 +465,7 @@ p {
   max-height: calc(100% - 2rem);
   padding: 0;
   color: var(--color-text);
+  background: var(--color-bg);
   border: 1px solid var(--color-border);
   border-radius: calc(var(--radius) * 2);
 }
@@ -511,8 +569,8 @@ p {
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
-  color: #ffffff;
-  background: #1f1f1f;
+  color: var(--color-notification-text);
+  background: var(--color-notification-bg);
   border-radius: var(--radius);
   box-shadow: 0 0.25rem 1rem rgb(0 0 0 / 0.25);
   animation: notification-in 150ms ease-out;
@@ -522,23 +580,24 @@ p {
   flex: 1;
 }
 
-/* Кнопки на тёмном фоне уведомления. */
-.notification .button--secondary {
-  color: #ffffff;
+/* Уведомление контрастно фону страницы, поэтому кнопки в нём берут его цвет текста. */
+.notification .button--secondary,
+.notification .button--ghost {
+  color: var(--color-notification-text);
   background: transparent;
-  border-color: #ffffff;
+  border-color: var(--color-notification-text);
 }
 
 .notification .button--ghost {
-  color: #ffffff;
+  border-color: transparent;
 }
 
 .notification .button:hover {
-  background: rgb(255 255 255 / 0.15);
+  background: color-mix(in srgb, var(--color-notification-text) 15%, transparent);
 }
 
 .notification :focus-visible {
-  outline-color: #ffffff;
+  outline-color: var(--color-notification-text);
 }
 
 @keyframes notification-in {
@@ -563,4 +622,40 @@ p {
   .app-main {
     padding-inline: var(--space-4);
   }
+}
+
+/* Шапка: загрузка и выбор темы */
+.app-header__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.theme-select {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.theme-select__label {
+  font-weight: 600;
+}
+
+.input--compact {
+  width: auto;
+  min-height: 2.25rem;
+  padding-block: var(--space-1);
+}
+
+/* Отчёт загрузки CSV */
+.import-report:empty {
+  display: none;
+}
+
+.import-report__errors {
+  max-height: 16rem;
+  margin: 0;
+  padding-left: var(--space-6);
+  overflow-y: auto;
 }

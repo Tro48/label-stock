@@ -3,7 +3,14 @@ import { vi } from 'vitest';
 export interface RecordedRequest {
   method: string;
   url: string;
+  /** JSON-тело разобрано; не-JSON (например, CSV) лежит строкой как есть. */
   body: unknown;
+}
+
+function parseBody(init: RequestInit | undefined): unknown {
+  if (typeof init?.body !== 'string') return undefined;
+  const contentType = (init.headers as Record<string, string> | undefined)?.['Content-Type'];
+  return contentType?.includes('json') ? JSON.parse(init.body) : init.body;
 }
 
 type RouteHandler = (request: RecordedRequest) => Response | Promise<Response>;
@@ -33,12 +40,7 @@ export function mockFetchRoutes(routes: Record<string, RouteHandler>) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = init?.method ?? 'GET';
-    const rawBody = init?.body;
-    const request: RecordedRequest = {
-      method,
-      url,
-      body: typeof rawBody === 'string' ? JSON.parse(rawBody) : undefined,
-    };
+    const request: RecordedRequest = { method, url, body: parseBody(init) };
     requests.push(request);
     const handler = routes[`${method} ${url.split('?')[0]}`];
     if (!handler) throw new Error(`Незамоканный запрос: ${method} ${url}`);

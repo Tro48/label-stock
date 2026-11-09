@@ -126,6 +126,19 @@ export class LabelsRepository {
     return row?.id;
   }
 
+  /** Активная позиция по номеру макета или штрихкоду, с блокировкой строки до конца транзакции. */
+  async lockActiveByUniqueField(
+    field: UniqueLabelField,
+    value: string,
+  ): Promise<LabelRow | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(labels)
+      .where(and(eq(labels[field], value), isNull(labels.deletedAt)))
+      .for('update');
+    return row;
+  }
+
   async insert(values: NewLabelValues): Promise<LabelRow> {
     const [row] = await this.db.insert(labels).values(values).returning();
     return row!;

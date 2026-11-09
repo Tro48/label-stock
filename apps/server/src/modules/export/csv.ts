@@ -6,7 +6,8 @@ const LINE_BREAK = '\r\n';
 
 const NEEDS_QUOTING = /[";\r\n]/;
 // Ячейка с `=`, `+`, `-`, `@` в начале Excel исполняет как формулу (CSV injection).
-const FORMULA_PREFIX = /^[=+\-@\t\r]/;
+// Апостроф в начале тоже экранируется, иначе загрузка обратно не отличит его от нашего.
+const FORMULA_PREFIX = /^[=+\-@\t\r']/;
 
 export type CsvCell = string | number | null;
 

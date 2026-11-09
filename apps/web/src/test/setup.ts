@@ -24,6 +24,23 @@ if (typeof document.createElement('div').isContentEditable !== 'boolean') {
   });
 }
 
+// user-event подставляет выбранные файлы через свойство input.files, а jsdom собирает
+// FormData(form) из внутреннего состояния поля и видит пустой файл. Берём файлы из input.files,
+// как это делает браузер.
+const JsdomFormData = globalThis.FormData;
+class FormDataWithSelectedFiles extends JsdomFormData {
+  constructor(form?: HTMLFormElement, submitter?: HTMLElement | null) {
+    super(form, submitter);
+    if (!form) return;
+    for (const input of form.querySelectorAll<HTMLInputElement>('input[type="file"][name]')) {
+      if (input.disabled || !input.files?.length) continue;
+      this.delete(input.name);
+      for (const file of input.files) this.append(input.name, file);
+    }
+  }
+}
+globalThis.FormData = FormDataWithSelectedFiles;
+
 afterEach(() => {
   cleanup();
   // Подменённый fetch и фейковые таймеры не должны протекать в соседние тесты.
