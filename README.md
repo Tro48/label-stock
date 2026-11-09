@@ -48,6 +48,40 @@ cd /opt/label-stock && git pull && docker compose -f deploy/docker-compose.yml u
 
 Миграции применяются при старте, данные в томе `postgres-data` сохраняются.
 
+## Запуск на Windows без Docker
+
+Нужны Node.js 22 LTS (с nodejs.org) и PostgreSQL 17 (установщик с postgresql.org ставит его службой с автозапуском).
+
+1. В `psql` или pgAdmin создать пользователя и базу:
+   ```sql
+   CREATE USER label_stock WITH PASSWORD 'пароль-из-латиницы-и-цифр';
+   CREATE DATABASE label_stock OWNER label_stock;
+   ```
+2. Скачать проект: `git clone https://github.com/Tro48/label-stock.git C:\label-stock` (или ZIP с GitHub).
+3. Запустить `start.cmd`. В первый раз он создаст `.env` из `deploy\windows\env.example` и попросит вписать пароль в `DATABASE_URL`. После этого запустить `start.cmd` ещё раз.
+
+`start.cmd` при первом запуске и после каждого `git pull` сам ставит зависимости и пересобирает проект; принудительно — `start.cmd -Rebuild`. Приложение работает в фоне, окно можно закрыть. Журналы — в `logs\`, остановка — `stop.cmd`.
+
+Доступ из локальной сети — разрешить порт в брандмауэре (PowerShell от администратора, один раз):
+
+```powershell
+New-NetFirewallRule -DisplayName "Остатки этикетки" -Direction Inbound -Protocol TCP -LocalPort 8080 -Action Allow
+```
+
+Автозапуск после перезагрузки (от администратора, путь — свой):
+
+```bat
+schtasks /Create /TN "LabelStock" /TR "C:\label-stock\start.cmd" /SC ONSTART /RU SYSTEM
+```
+
+Бэкап без Docker — `pg_dump` из папки PostgreSQL, например в Планировщике заданий раз в сутки:
+
+```bat
+"C:\Program Files\PostgreSQL\17\bin\pg_dump.exe" -U label_stock -d label_stock -Fc -f D:\backup\label-stock_%DATE:~-4%-%DATE:~3,2%-%DATE:~0,2%.dump
+```
+
+Пароль для `pg_dump` — в `%APPDATA%\postgresql\pgpass.conf` строкой `localhost:5432:label_stock:label_stock:пароль`.
+
 ## Деплой на сервер
 
 ```sh
