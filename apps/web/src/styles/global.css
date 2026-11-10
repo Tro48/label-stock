@@ -481,6 +481,12 @@ p {
   grid-template-columns: minmax(10rem, 2fr) minmax(7rem, 1fr) minmax(9rem, 1fr) auto auto auto;
 }
 
+.labels-table--selectable {
+  grid-template-columns:
+    auto minmax(10rem, 2fr) minmax(7rem, 1fr) minmax(9rem, 1fr)
+    auto auto auto;
+}
+
 .table__sort {
   display: inline-flex;
   gap: var(--space-1);
@@ -512,6 +518,13 @@ p {
 
 .quantity__note {
   font-weight: 400;
+}
+
+.quantity__obsolete {
+  display: block;
+  color: var(--color-danger);
+  font-size: 0.875rem;
+  font-weight: 600;
 }
 
 /* Сообщения */
@@ -752,4 +765,56 @@ p {
   margin: 0;
   padding-left: var(--space-6);
   overflow-y: auto;
+}
+
+/* Заявки */
+.request-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border-left: 0.25rem solid var(--color-primary);
+  border-radius: var(--radius);
+}
+
+.request-bar__title {
+  font-size: 1rem;
+  margin-right: auto;
+}
+
+.request-items__amount {
+  width: 8rem;
+}
+
+.request-sheet__title {
+  font-size: 1.125rem;
+}
+
+.request-sheet__table {
+  width: 100%;
+}
+
+/* Лист заявки печатается без остальной страницы; на экране он показан внутри окна. */
+.print-sheet {
+  display: none;
+}
+
+@media print {
+  body > :not(.print-sheet) {
+    display: none !important;
+  }
+
+  .print-sheet {
+    display: grid;
+    gap: 1rem;
+    color: #000;
+    background: #fff;
+  }
+
+  .print-sheet th,
+  .print-sheet td {
+    border: 1px solid #000;
+  }
 }

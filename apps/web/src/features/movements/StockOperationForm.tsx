@@ -1,6 +1,7 @@
 import { useId, useState, type FormEvent } from 'react';
 import { todayIsoDate, type Label, type MovementResult } from '@label-stock/shared';
 import { errorMessage } from '../../shared/api/client';
+import { formatQuantity } from '../../shared/format';
 import { useCreateMovement } from '../labels/api';
 import {
   buildMovementInput,
@@ -29,12 +30,15 @@ export function StockOperationForm({ label, onDone }: StockOperationFormProps) {
     amount: '',
     printedAt: todayIsoDate(),
     comment: '',
+    layoutChanged: false,
   });
   const [error, setError] = useState<string>();
   const createMovement = useCreateMovement();
 
-  const update = (field: keyof StockOperationValues) => (value: string) =>
-    setValues((current) => ({ ...current, [field]: value }));
+  const update =
+    <Field extends keyof StockOperationValues>(field: Field) =>
+    (value: StockOperationValues[Field]) =>
+      setValues((current) => ({ ...current, [field]: value }));
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -91,6 +95,23 @@ export function StockOperationForm({ label, onDone }: StockOperationFormProps) {
           value={values.printedAt}
           onChange={(event) => update('printedAt')(event.target.value)}
         />
+      </div>
+
+      <div className="field">
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={values.layoutChanged}
+            onChange={(event) => update('layoutChanged')(event.target.checked)}
+            aria-describedby={`${ids}-layout-hint`}
+          />
+          Макет менялся
+        </label>
+        <p id={`${ids}-layout-hint`} className="field__hint">
+          {values.layoutChanged
+            ? `При «Добавить» старый остаток ${formatQuantity(label.quantity)} шт. уйдёт в утилизацию`
+            : 'Отметьте при допечатке по новому макету'}
+        </p>
       </div>
 
       <div className="field">

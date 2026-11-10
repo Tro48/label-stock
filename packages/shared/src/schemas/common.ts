@@ -8,6 +8,7 @@ export const ERROR_CODES = {
   duplicate: 'DUPLICATE',
   labelDeleted: 'LABEL_DELETED',
   negativeStock: 'NEGATIVE_STOCK',
+  obsoleteStock: 'OBSOLETE_STOCK',
   rateLimited: 'RATE_LIMITED',
   internal: 'INTERNAL_ERROR',
 } as const;

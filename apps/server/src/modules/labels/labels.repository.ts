@@ -5,6 +5,7 @@ import {
   desc,
   eq,
   ilike,
+  inArray,
   isNotNull,
   isNull,
   like,
@@ -108,6 +109,15 @@ export class LabelsRepository {
       .innerJoin(counterparties, eq(labels.counterpartyId, counterparties.id))
       .where(eq(labels.id, id));
     return row;
+  }
+
+  async findByIds(ids: readonly string[]): Promise<LabelWithCounterparty[]> {
+    if (ids.length === 0) return [];
+    return this.db
+      .select(selection)
+      .from(labels)
+      .innerJoin(counterparties, eq(labels.counterpartyId, counterparties.id))
+      .where(inArray(labels.id, [...ids]));
   }
 
   async findActiveByBarcode(barcode: string): Promise<LabelWithCounterparty | undefined> {

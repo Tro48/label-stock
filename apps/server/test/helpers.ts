@@ -90,3 +90,47 @@ export async function readQuantity(pool: pg.Pool, labelId: string): Promise<numb
 }
 
 export const MISSING_ID = '00000000-0000-4000-8000-000000000000';
+
+export function postStockRequest(app: FastifyInstance, payload: object) {
+  return app.inject({ method: 'POST', url: '/api/stock-requests', payload });
+}
+
+export interface StoredStock {
+  quantity: number;
+  obsoleteQuantity: number;
+}
+
+/** Остаток и «старый макет» прямо из БД. */
+export async function readStock(pool: pg.Pool, labelId: string): Promise<StoredStock> {
+  const result = await pool.query<StoredStock>(
+    'SELECT quantity, obsolete_quantity AS "obsoleteQuantity" FROM labels WHERE id = $1',
+    [labelId],
+  );
+  return result.rows[0]!;
+}
+
+async function expectCreated(response: Awaited<ReturnType<typeof postMovement>>) {
+  if (response.statusCode !== 201) {
+    throw new Error(`Движение не прошло: ${response.statusCode} ${response.body}`);
+  }
+  return response.json<{ label: Label }>().label;
+}
+
+/**
+ * Позиция, где `obsolete` шт. — старый макет, `usable` шт. — годный остаток: создаётся с `obsolete`,
+ * затем допечатывается со сменой макета. Без годного остатка допечатанная 1 шт. снимается исправлением
+ * (оно, в отличие от списания, может трогать старый макет).
+ */
+export async function createLabelWithObsolete(
+  app: FastifyInstance,
+  { usable, obsolete }: { usable: number; obsolete: number },
+  overrides: Partial<CreateLabelInput> = {},
+): Promise<Label> {
+  const label = await createLabel(app, { ...overrides, quantity: obsolete });
+  const printed = Math.max(usable, 1);
+  const afterPrint = await expectCreated(
+    await postMovement(app, label.id, { reason: 'print', delta: printed, layoutChanged: true }),
+  );
+  if (usable > 0) return afterPrint;
+  return expectCreated(await postMovement(app, label.id, { reason: 'correction', delta: -1 }));
+}

@@ -1,14 +1,23 @@
 import { useCallback, useId, useRef, useState } from 'react';
-import type { Label, MovementResult } from '@label-stock/shared';
+import type {
+  Label,
+  MovementResult,
+  StockRequestKind,
+  StockRequestResult,
+} from '@label-stock/shared';
 import { ApiError, errorMessage } from '../../shared/api/client';
 import { useNotifications } from '../../shared/ui/notifications';
 import { describeOperationResult, type StockOperation } from '../movements/stock-operation';
 import { ScanStatus, type ScanState } from '../scanner/ScanStatus';
 import { useBarcodeScanner } from '../scanner/useBarcodeScanner';
+import { StockRequestBar } from '../stock-requests/StockRequestBar';
+import { StockRequestDialog } from '../stock-requests/StockRequestDialog';
+import { useLabelSelection } from '../stock-requests/use-label-selection';
 import { findLabelByBarcode, useRestoreLabel } from './api';
 import { DeleteLabelDialog } from './DeleteLabelDialog';
 import { LabelCardDialog } from './LabelCardDialog';
 import { LabelFormDialog, type LabelFormMode } from './LabelFormDialog';
+import { labelTitle } from './label-title';
 import { LabelsList } from './LabelsList';
 import { LabelsToolbar } from './LabelsToolbar';
 import { useLabelsQueryState } from './use-labels-query-state';
@@ -16,7 +25,8 @@ import { useLabelsQueryState } from './use-labels-query-state';
 type Modal =
   | { kind: 'card'; labelId: string; initialLabel?: Label | undefined }
   | { kind: 'form'; mode: LabelFormMode }
-  | { kind: 'delete'; label: Label };
+  | { kind: 'delete'; label: Label }
+  | { kind: 'request'; requestKind: StockRequestKind; labels: readonly Label[] };
 
 export function StockScreen() {
   const headingId = useId();
@@ -34,6 +44,7 @@ export function StockScreen() {
   const query = useLabelsQueryState(false);
   const { notify } = useNotifications();
   const restoreLabel = useRestoreLabel();
+  const selection = useLabelSelection();
 
   const closeModal = useCallback(() => setModal(null), []);
 
@@ -80,6 +91,13 @@ export function StockScreen() {
     });
   };
 
+  const handleRequestCreated = (result: StockRequestResult) => {
+    selection.remove(result.items.map((item) => item.label.id));
+    notify(
+      `${result.kind === 'transfer' ? 'Перемещение' : 'Утилизация'} проведена: позиций ${result.items.length}`,
+    );
+  };
+
   // Фильтры не трогаем: список остаётся полным, новая позиция появится в нём после перечитывания.
   const handleSaved = (_label: Label, created: boolean) => {
     setModal(null);
@@ -106,6 +124,13 @@ export function StockScreen() {
         state={scanState}
         onCreate={(barcode) => setModal({ kind: 'form', mode: { kind: 'create', barcode } })}
       />
+      <StockRequestBar
+        count={selection.labels.length}
+        onCreate={(requestKind) =>
+          setModal({ kind: 'request', requestKind, labels: selection.labels })
+        }
+        onClear={selection.clear}
+      />
       <LabelsList
         caption="Позиции"
         params={query.params}
@@ -117,8 +142,9 @@ export function StockScreen() {
             ? 'Ничего не найдено. Измените условия поиска.'
             : 'Пока нет ни одной позиции — добавьте первую.'
         }
+        selection={selection}
         renderActions={(label) => {
-          const where = label.layoutNumber ?? label.barcode ?? label.counterparty.name;
+          const where = labelTitle(label);
           return (
             <>
               <button
@@ -155,6 +181,9 @@ export function StockScreen() {
           onClose={closeModal}
           onOperationDone={handleOperationDone}
           onEdit={(label) => setModal({ kind: 'form', mode: { kind: 'edit', label } })}
+          onDispose={(label) =>
+            setModal({ kind: 'request', requestKind: 'disposal', labels: [label] })
+          }
           returnFocusTo={returnFocusAfterCard}
         />
       )}
@@ -165,6 +194,15 @@ export function StockScreen() {
           onSaved={handleSaved}
           onOpenLabel={(labelId) => setModal({ kind: 'card', labelId })}
           returnFocusTo={modal.mode.kind === 'create' ? focusSearch : undefined}
+        />
+      )}
+      {modal?.kind === 'request' && (
+        <StockRequestDialog
+          kind={modal.requestKind}
+          labels={modal.labels}
+          onClose={closeModal}
+          onCreated={handleRequestCreated}
+          returnFocusTo={focusSearch}
         />
       )}
       {modal?.kind === 'delete' && (

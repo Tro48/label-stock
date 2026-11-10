@@ -8,6 +8,8 @@ export interface StockOperationValues {
   amount: string;
   printedAt: string;
   comment: string;
+  /** Только для допечатки: старый остаток уходит в утилизацию. */
+  layoutChanged: boolean;
 }
 
 export type BuildResult = { ok: true; input: CreateMovementInput } | { ok: false; error: string };
@@ -15,7 +17,7 @@ export type BuildResult = { ok: true; input: CreateMovementInput } | { ok: false
 /** Переводит поле «количество» в операцию API: знак дельты задаёт кнопка, а не пользователь. */
 export function buildMovementInput(
   operation: StockOperation,
-  { amount, printedAt, comment }: StockOperationValues,
+  { amount, printedAt, comment, layoutChanged }: StockOperationValues,
 ): BuildResult {
   const parsed = quantityInputSchema.safeParse(amount);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Ошибка' };
@@ -32,6 +34,7 @@ export function buildMovementInput(
       reason: 'print',
       delta: value,
       printedAt: printedAt || undefined,
+      layoutChanged,
       comment: commentValue,
     },
   };

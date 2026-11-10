@@ -17,6 +17,8 @@ export const labelSchema = z.object({
   barcode: z.string().nullable(),
   printedAt: z.string(),
   quantity: z.int(),
+  /** Часть остатка со старым макетом: ждёт утилизации, списывать и перемещать её нельзя. */
+  obsoleteQuantity: z.int(),
   comment: z.string().nullable(),
   version: z.int(),
   externalId: z.string().nullable(),

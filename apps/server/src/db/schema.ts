@@ -45,6 +45,9 @@ export const labels = pgTable(
     // date без времени, чтобы день печати не «съезжал» из-за часовых поясов.
     printedAt: date('printed_at', { mode: 'string' }).notNull(),
     quantity: integer('quantity').notNull(),
+    // Часть остатка со старым макетом. Отдельным полем, а не отдельной позицией: штрихкод тот же,
+    // и сканер должен находить одну позицию.
+    obsoleteQuantity: integer('obsolete_quantity').notNull().default(0),
     comment: text('comment'),
     version: integer('version').notNull().default(1),
     externalId: text('external_id').unique(),
@@ -54,6 +57,10 @@ export const labels = pgTable(
   (table) => [
     check('labels_layout_number_digits_chk', sql`${table.layoutNumber} ~ '^[0-9]+$'`),
     check('labels_quantity_non_negative_chk', sql`${table.quantity} >= 0`),
+    check(
+      'labels_obsolete_quantity_range_chk',
+      sql`${table.obsoleteQuantity} BETWEEN 0 AND ${table.quantity}`,
+    ),
     // Уникальность только среди активных: после мягкого удаления номер и штрихкод освобождаются.
     uniqueIndex('labels_layout_number_active_uq')
       .on(table.layoutNumber)

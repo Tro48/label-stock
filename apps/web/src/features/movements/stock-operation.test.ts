@@ -11,7 +11,7 @@ import {
 const NBSP = ' ';
 
 function values(overrides: Partial<StockOperationValues> = {}): StockOperationValues {
-  return { amount: '30', printedAt: '2026-11-05', comment: '', ...overrides };
+  return { amount: '30', printedAt: '2026-11-05', comment: '', layoutChanged: false, ...overrides };
 }
 
 describe('buildMovementInput', () => {
@@ -25,7 +25,33 @@ describe('buildMovementInput', () => {
   it('допечатка — положительная дельта и дата печати', () => {
     expect(buildMovementInput('print', values({ amount: '500' }))).toEqual({
       ok: true,
-      input: { reason: 'print', delta: 500, printedAt: '2026-11-05', comment: undefined },
+      input: {
+        reason: 'print',
+        delta: 500,
+        printedAt: '2026-11-05',
+        layoutChanged: false,
+        comment: undefined,
+      },
+    });
+  });
+
+  it('допечатка с отмеченным «Макет менялся» — layoutChanged: true', () => {
+    const result = buildMovementInput('print', values({ layoutChanged: true }));
+    expect(result.ok && result.input).toMatchObject({ reason: 'print', layoutChanged: true });
+  });
+
+  it('списание не отправляет layoutChanged, даже если флажок отмечен', () => {
+    const result = buildMovementInput('consumption', values({ layoutChanged: true }));
+    expect(result).toEqual({
+      ok: true,
+      input: { reason: 'consumption', delta: -30, comment: undefined },
+    });
+  });
+
+  it('ошибка количества важнее флажка: при layoutChanged и пустом количестве — ошибка', () => {
+    expect(buildMovementInput('print', values({ amount: '', layoutChanged: true }))).toEqual({
+      ok: false,
+      error: 'Только целое число не меньше нуля',
     });
   });
 
@@ -33,7 +59,13 @@ describe('buildMovementInput', () => {
     const result = buildMovementInput('print', values({ printedAt: '' }));
     expect(result).toEqual({
       ok: true,
-      input: { reason: 'print', delta: 30, printedAt: undefined, comment: undefined },
+      input: {
+        reason: 'print',
+        delta: 30,
+        printedAt: undefined,
+        layoutChanged: false,
+        comment: undefined,
+      },
     });
   });
 

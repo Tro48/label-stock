@@ -1,19 +1,15 @@
 import {
-  ERROR_CODES,
-  INT32_MAX,
   type CreateMovementData,
   type Movement,
   type MovementResult,
   type Paginated,
 } from '@label-stock/shared';
 import type { Database, Transaction } from '../../db/client';
-import type { LabelRow, MovementRow } from '../../db/schema';
-import { AppError, labelDeleted, negativeStock, notFound } from '../../shared/errors';
+import type { MovementRow } from '../../db/schema';
 import { LabelsRepository } from '../labels/labels.repository';
 import { toLabelDto } from '../labels/label.mapper';
-import { MovementsRepository } from './movements.repository';
-
-const labelNotFound = () => notFound('Позиция не найдена');
+import { MovementsRepository, type DeltaOptions } from './movements.repository';
+import { assertActive, assertDeltaAllowed, labelNotFound } from './stock-rules';
 
 export function toMovementDto(row: MovementRow): Movement {
   return {
@@ -65,13 +61,20 @@ export class MovementsService {
     operation: DeltaOperation,
   ): Promise<MovementRow> {
     const movements = new MovementsRepository(tx);
-    const printedAt = operation.reason === 'print' ? operation.printedAt : undefined;
-    let updated = await movements.applyDelta(labelId, operation.delta, printedAt);
+    const options: DeltaOptions =
+      operation.reason === 'print'
+        ? { printedAt: operation.printedAt, layoutChanged: operation.layoutChanged }
+        : { usableOnly: operation.reason === 'consumption' };
+    let updated = await movements.applyDelta(labelId, operation.delta, options);
     if (!updated) {
       // Между отклонённым UPDATE и проверкой остаток могла поменять параллельная операция:
       // проверяем под блокировкой строки и, если дельта теперь допустима, применяем её.
-      assertDeltaAllowed(await movements.lockLabel(labelId), operation.delta);
-      updated = await movements.applyDelta(labelId, operation.delta, printedAt);
+      assertDeltaAllowed(
+        await movements.lockLabel(labelId),
+        operation.delta,
+        options.usableOnly ?? false,
+      );
+      updated = await movements.applyDelta(labelId, operation.delta, options);
       if (!updated) throw new Error('UPDATE отклонён под блокировкой строки');
     }
     return movements.insert({
@@ -103,18 +106,4 @@ export class MovementsService {
       comment: operation.comment ?? null,
     });
   }
-}
-
-function assertDeltaAllowed(label: LabelRow | undefined, delta: number): void {
-  assertActive(label);
-  const result = label.quantity + delta;
-  if (result < 0) throw negativeStock();
-  if (result > INT32_MAX) {
-    throw new AppError(422, ERROR_CODES.validation, 'Остаток получится слишком большим');
-  }
-}
-
-function assertActive(label: LabelRow | undefined): asserts label is LabelRow {
-  if (!label) throw labelNotFound();
-  if (label.deletedAt) throw labelDeleted();
 }

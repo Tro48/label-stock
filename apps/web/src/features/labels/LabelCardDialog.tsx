@@ -1,5 +1,5 @@
 import type { Label, MovementResult } from '@label-stock/shared';
-import { EMPTY_VALUE, formatDate } from '../../shared/format';
+import { EMPTY_VALUE, formatDate, formatQuantity } from '../../shared/format';
 import { Dialog } from '../../shared/ui/Dialog';
 import { ErrorAlert } from '../../shared/ui/ErrorAlert';
 import { Tabs } from '../../shared/ui/Tabs';
@@ -15,6 +15,7 @@ interface LabelCardDialogProps {
   onClose: () => void;
   onOperationDone: (operation: StockOperation, result: MovementResult) => void;
   onEdit: (label: Label) => void;
+  onDispose: (label: Label) => void;
   returnFocusTo?: () => HTMLElement | null | undefined;
 }
 
@@ -24,6 +25,7 @@ export function LabelCardDialog({
   onClose,
   onOperationDone,
   onEdit,
+  onDispose,
   returnFocusTo,
 }: LabelCardDialogProps) {
   const { data: label, error, failureReason, isFetching } = useLabel(labelId, initialLabel);
@@ -64,10 +66,26 @@ export function LabelCardDialog({
             <div className="card-summary__quantity">
               <dt>Остаток, шт.</dt>
               <dd>
-                <QuantityText quantity={label.quantity} />
+                <QuantityText quantity={label.quantity} obsoleteQuantity={label.obsoleteQuantity} />
               </dd>
             </div>
           </dl>
+
+          {!label.deletedAt && label.obsoleteQuantity > 0 && (
+            <div className="alert alert--warning">
+              <p>
+                Макет менялся: {formatQuantity(label.obsoleteQuantity)} шт. со старым макетом нужно
+                утилизировать. Списать и переместить их нельзя.
+              </p>
+              <button
+                type="button"
+                className="button button--secondary"
+                onClick={() => onDispose(label)}
+              >
+                Заявка на утилизацию
+              </button>
+            </div>
+          )}
 
           {label.deletedAt ? (
             <p className="alert">Позиция удалена. Восстановите её в разделе «Удалённые».</p>

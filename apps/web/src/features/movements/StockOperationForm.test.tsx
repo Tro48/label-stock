@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { todayIsoDate } from '@label-stock/shared';
 import { errorResponse, jsonResponse, mockFetchRoutes } from '../../test/fetch-mock';
 import { makeLabel, makeMovement, makeMovementResult } from '../../test/fixtures';
+import { formatQuantity } from '../../shared/format';
 import { renderWithProviders } from '../../test/render';
 import { StockOperationForm } from './StockOperationForm';
 
@@ -58,7 +59,71 @@ describe('StockOperationForm', () => {
       reason: 'print',
       delta: 500,
       printedAt: todayIsoDate(),
+      layoutChanged: false,
       comment: 'тираж',
+    });
+  });
+
+  describe('флажок «Макет менялся»', () => {
+    const checkbox = () => screen.getByRole('checkbox', { name: 'Макет менялся' });
+
+    it('по умолчанию снят, подписан и связан с подсказкой', () => {
+      setup();
+      expect(checkbox()).not.toBeChecked();
+      expect(checkbox()).toHaveAccessibleDescription('Отметьте при допечатке по новому макету');
+    });
+
+    it('отмеченный — подсказка называет остаток, который уйдёт в утилизацию', async () => {
+      const { user } = setup();
+      await user.click(checkbox());
+      expect(checkbox()).toBeChecked();
+      expect(checkbox()).toHaveAccessibleDescription(
+        `При «Добавить» старый остаток ${formatQuantity(LABEL.quantity)} шт. уйдёт в утилизацию`,
+      );
+    });
+
+    it('переключается с клавиатуры пробелом', async () => {
+      const { user } = setup();
+      checkbox().focus();
+      await user.keyboard(' ');
+      expect(checkbox()).toBeChecked();
+      await user.keyboard(' ');
+      expect(checkbox()).not.toBeChecked();
+    });
+
+    it('отмеченный уходит в допечатку как layoutChanged: true', async () => {
+      const { requests, onDone, user, amount } = setup();
+      await user.type(amount, '200');
+      await user.click(checkbox());
+      await user.click(screen.getByRole('button', { name: 'Добавить' }));
+      await waitFor(() => expect(onDone).toHaveBeenCalledWith('print', expect.anything()));
+      expect(requests[0]?.body).toMatchObject({ reason: 'print', delta: 200, layoutChanged: true });
+    });
+
+    it('отмечен и снят обратно — уходит layoutChanged: false', async () => {
+      const { requests, onDone, user, amount } = setup();
+      await user.type(amount, '200');
+      await user.click(checkbox());
+      await user.click(checkbox());
+      await user.click(screen.getByRole('button', { name: 'Добавить' }));
+      await waitFor(() => expect(onDone).toHaveBeenCalled());
+      expect(requests[0]?.body).toMatchObject({ layoutChanged: false });
+    });
+
+    it('при списании флажок не уходит в запрос', async () => {
+      const { requests, onDone, user, amount } = setup();
+      await user.click(checkbox());
+      await user.type(amount, '5{Enter}');
+      await waitFor(() => expect(onDone).toHaveBeenCalledWith('consumption', expect.anything()));
+      expect(requests[0]?.body).toEqual({ reason: 'consumption', delta: -5 });
+    });
+
+    it('422 OBSOLETE_STOCK при списании показывается в role=alert', async () => {
+      const message = 'Можно взять не больше 10 шт.: ещё 5 шт. со старым макетом ждут утилизации';
+      const { onDone, user, amount } = setup(() => errorResponse(422, 'OBSOLETE_STOCK', message));
+      await user.type(amount, '12{Enter}');
+      expect(await screen.findByRole('alert')).toHaveTextContent(message);
+      expect(onDone).not.toHaveBeenCalled();
     });
   });
 

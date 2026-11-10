@@ -8,6 +8,7 @@ export function makeLabel(overrides: Partial<Label> = {}): Label {
     barcode: '4600000000017',
     printedAt: '2026-11-01',
     quantity: 1200,
+    obsoleteQuantity: 0,
     comment: null,
     version: 3,
     externalId: null,

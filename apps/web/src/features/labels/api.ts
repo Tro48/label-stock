@@ -52,7 +52,7 @@ export function findLabelByBarcode(code: string): Promise<Label> {
 }
 
 /** После любой записи таблица и карточка перечитываются: данные могли поменять с другого компьютера. */
-function useLabelMutation<Variables, Result>(
+export function useLabelMutation<Variables, Result>(
   mutationFn: (variables: Variables) => Promise<Result>,
 ) {
   const queryClient = useQueryClient();

@@ -9,6 +9,7 @@ export function toLabelDto({ label, counterpartyName }: LabelWithCounterparty): 
     barcode: label.barcode,
     printedAt: label.printedAt,
     quantity: label.quantity,
+    obsoleteQuantity: label.obsoleteQuantity,
     comment: label.comment,
     version: label.version,
     externalId: label.externalId,

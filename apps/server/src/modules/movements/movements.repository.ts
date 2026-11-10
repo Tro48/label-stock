@@ -11,6 +11,14 @@ export interface NewMovementValues {
   comment: string | null;
 }
 
+export interface DeltaOptions {
+  printedAt?: string | undefined;
+  /** Допечатка нового макета: весь остаток до неё становится подлежащим утилизации. */
+  layoutChanged?: boolean;
+  /** Списание и перемещение берут только годный остаток: старый макет уходит лишь утилизацией. */
+  usableOnly?: boolean;
+}
+
 export class MovementsRepository {
   constructor(private readonly db: DbExecutor) {}
 
@@ -27,12 +35,18 @@ export class MovementsRepository {
   async applyDelta(
     labelId: string,
     delta: number,
-    printedAt: string | undefined,
+    { printedAt, layoutChanged = false, usableOnly = false }: DeltaOptions = {},
   ): Promise<LabelRow | undefined> {
+    const floor = usableOnly ? sql`${labels.obsoleteQuantity}` : sql`0`;
     const [row] = await this.db
       .update(labels)
       .set({
         quantity: sql`${labels.quantity} + ${delta}`,
+        // В SET справа старые значения: при смене макета в утилизацию уходит остаток до допечатки.
+        // Иначе уменьшение остатка (исправление) не даёт «старому» превысить весь остаток.
+        obsoleteQuantity: layoutChanged
+          ? sql`${labels.quantity}`
+          : sql`LEAST(${labels.obsoleteQuantity}, ${labels.quantity} + ${delta})`,
         updatedAt: sql`now()`,
         // Дата печати входит в редактируемые поля, поэтому её смена поднимает версию.
         ...(printedAt ? { printedAt, version: sql`${labels.version} + 1` } : {}),
@@ -41,11 +55,25 @@ export class MovementsRepository {
         and(
           eq(labels.id, labelId),
           isNull(labels.deletedAt),
-          sql`${labels.quantity}::bigint + ${delta} BETWEEN 0 AND ${INT32_MAX}`,
+          sql`${labels.quantity}::bigint + ${delta} BETWEEN ${floor} AND ${INT32_MAX}`,
         ),
       )
       .returning();
     return row;
+  }
+
+  /** Списывает весь старый макет. Вызывается под lockLabel, поэтому объём известен заранее. */
+  async disposeObsolete(labelId: string): Promise<LabelRow> {
+    const [row] = await this.db
+      .update(labels)
+      .set({
+        quantity: sql`${labels.quantity} - ${labels.obsoleteQuantity}`,
+        obsoleteQuantity: 0,
+        updatedAt: sql`now()`,
+      })
+      .where(eq(labels.id, labelId))
+      .returning();
+    return row!;
   }
 
   /** Блокирует строку до конца транзакции: инвентаризация считает дельту от актуального остатка. */
@@ -57,7 +85,11 @@ export class MovementsRepository {
   async setQuantity(labelId: string, quantity: number): Promise<LabelRow> {
     const [row] = await this.db
       .update(labels)
-      .set({ quantity, updatedAt: sql`now()` })
+      .set({
+        quantity,
+        obsoleteQuantity: sql`LEAST(${labels.obsoleteQuantity}, ${quantity})`,
+        updatedAt: sql`now()`,
+      })
       .where(eq(labels.id, labelId))
       .returning();
     return row!;

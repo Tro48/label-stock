@@ -27,6 +27,13 @@ export const labelDeleted = () =>
 export const negativeStock = () =>
   new AppError(422, ERROR_CODES.negativeStock, 'Остаток не может уйти в минус');
 
+export const obsoleteStock = (usable: number, obsolete: number) =>
+  new AppError(
+    422,
+    ERROR_CODES.obsoleteStock,
+    `Можно взять не больше ${usable} шт.: ещё ${obsolete} шт. со старым макетом ждут утилизации`,
+  );
+
 const PG_UNIQUE_VIOLATION = '23505';
 
 /** Имя нарушенного уникального индекса, если ошибка — нарушение уникальности PostgreSQL. */

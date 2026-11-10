@@ -8,6 +8,8 @@ export const MOVEMENT_REASONS = [
   'consumption',
   'inventory',
   'correction',
+  'transfer',
+  'disposal',
 ] as const;
 
 export type MovementReason = (typeof MOVEMENT_REASONS)[number];
@@ -18,6 +20,8 @@ export const MOVEMENT_REASON_LABELS: Readonly<Record<MovementReason, string>> = 
   consumption: 'Списание',
   inventory: 'Инвентаризация',
   correction: 'Исправление',
+  transfer: 'Перемещение',
+  disposal: 'Утилизация',
 };
 
 export const movementSchema = z.object({
@@ -34,7 +38,8 @@ const optionalComment = commentSchema.optional();
 
 /**
  * Знак дельты задан операцией: списание только уменьшает, допечатка только увеличивает.
- * `created` через API не создаётся — его пишет сервер при создании позиции.
+ * `created` через API не создаётся — его пишет сервер при создании позиции,
+ * `transfer` и `disposal` — только заявками (см. stock-request.ts).
  */
 export const createMovementSchema = z.discriminatedUnion('reason', [
   z.object({
@@ -46,6 +51,8 @@ export const createMovementSchema = z.discriminatedUnion('reason', [
     reason: z.literal('print'),
     delta: deltaSchema.min(1, { message: 'Допечатка увеличивает остаток' }),
     printedAt: isoDateSchema.optional(),
+    /** Макет менялся: весь остаток до допечатки становится подлежащим утилизации. */
+    layoutChanged: z.boolean().default(false),
     comment: optionalComment,
   }),
   z.object({

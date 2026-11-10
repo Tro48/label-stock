@@ -26,7 +26,7 @@ describe('createMovementSchema', () => {
     it('принимает положительную дельту и дату печати', () => {
       expect(
         createMovementSchema.parse({ reason: 'print', delta: 100, printedAt: '2028-02-29' }),
-      ).toEqual({ reason: 'print', delta: 100, printedAt: '2028-02-29' });
+      ).toEqual({ reason: 'print', delta: 100, printedAt: '2028-02-29', layoutChanged: false });
     });
 
     it.each([-5, 0, INT32_MAX + 1])('отклоняет дельту %s', (delta) => {
@@ -35,6 +35,24 @@ describe('createMovementSchema', () => {
 
     it('отклоняет невалидную дату печати', () => {
       expect(accepts({ reason: 'print', delta: 1, printedAt: '2026-02-29' })).toBe(false);
+    });
+
+    it.each([true, false])('принимает layoutChanged = %s', (layoutChanged) => {
+      expect(createMovementSchema.parse({ reason: 'print', delta: 1, layoutChanged })).toEqual({
+        reason: 'print',
+        delta: 1,
+        layoutChanged,
+      });
+    });
+
+    it('без layoutChanged — по умолчанию false', () => {
+      expect(createMovementSchema.parse({ reason: 'print', delta: 1 })).toMatchObject({
+        layoutChanged: false,
+      });
+    });
+
+    it.each(['true', 1, 0, null, 'да'])('отклоняет layoutChanged = %s', (layoutChanged) => {
+      expect(accepts({ reason: 'print', delta: 1, layoutChanged })).toBe(false);
     });
   });
 
@@ -45,6 +63,12 @@ describe('createMovementSchema', () => {
 
     it('отклоняет нулевую дельту', () => {
       expect(accepts({ reason: 'correction', delta: 0 })).toBe(false);
+    });
+
+    it('layoutChanged у исправления отбрасывается, а не применяется', () => {
+      expect(
+        createMovementSchema.parse({ reason: 'correction', delta: 5, layoutChanged: true }),
+      ).toEqual({ reason: 'correction', delta: 5 });
     });
   });
 
@@ -77,4 +101,13 @@ describe('createMovementSchema', () => {
     const parsed = createMovementSchema.parse({ reason: 'consumption', delta: -1, comment: '  ' });
     expect(parsed.comment).toBeNull();
   });
+});
+
+describe('createMovementSchema: причины заявок', () => {
+  it.each(['transfer', 'disposal', 'created'])(
+    'reason %s через движения не принимается',
+    (reason) => {
+      expect(accepts({ reason, delta: -1 })).toBe(false);
+    },
+  );
 });

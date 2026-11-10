@@ -22,6 +22,8 @@ import { LabelsService } from './modules/labels/labels.service';
 import { labelsRoutes } from './modules/labels/labels.routes';
 import { MovementsService } from './modules/movements/movements.service';
 import { movementsRoutes } from './modules/movements/movements.routes';
+import { StockRequestsService } from './modules/stock-requests/stock-requests.service';
+import { stockRequestsRoutes } from './modules/stock-requests/stock-requests.routes';
 import { exportRoutes } from './modules/export/export.routes';
 import { ImportService } from './modules/import/import.service';
 import { importRoutes } from './modules/import/import.routes';
@@ -78,12 +80,14 @@ export async function buildApp({
     labels: new LabelsService(db),
     counterparties: new CounterpartiesService(new CounterpartiesRepository(db)),
     movements: new MovementsService(db),
+    stockRequests: new StockRequestsService(db),
   };
 
   await app.register(
     async (scope) => {
       await scope.register(labelsRoutes(api.labels));
       await scope.register(movementsRoutes(api.movements));
+      await scope.register(stockRequestsRoutes(api.stockRequests));
       await scope.register(counterpartiesRoutes(api.counterparties));
       await scope.register(exportRoutes(new LabelsRepository(db)));
       await scope.register(importRoutes(new ImportService(db)));
