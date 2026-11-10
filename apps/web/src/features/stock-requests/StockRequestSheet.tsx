@@ -18,6 +18,7 @@ export function StockRequestSheet({ request, className }: StockRequestSheetProps
         {STOCK_REQUEST_TITLES[request.kind]} от{' '}
         <time dateTime={request.createdAt}>{formatDateTime(request.createdAt)}</time>
       </h3>
+      {request.requestNumber && <p>По заявке 1С № {request.requestNumber}</p>}
       <table className="table table--compact request-sheet__table">
         <thead>
           <tr>

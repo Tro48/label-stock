@@ -19,6 +19,10 @@ interface RequestStep {
   run: (tx: Transaction) => Promise<MovementRow>;
 }
 
+/** Номер попадает в журнал каждой позиции: по истории видно, к какой заявке 1С ушла этикетка. */
+const transferComment = (requestNumber: string | null | undefined) =>
+  requestNumber ? `Заявка 1С № ${requestNumber}` : null;
+
 const nothingToDispose = () => new AppError(422, ERROR_CODES.validation, 'Утилизировать нечего');
 
 /** Добавляет к ошибке id позиции: в заявке их много, клиент подсвечивает нужную строку. */
@@ -36,11 +40,12 @@ export class StockRequestsService {
   }
 
   async create(request: CreateStockRequestData): Promise<StockRequestResult> {
+    const requestNumber = request.kind === 'transfer' ? (request.requestNumber ?? null) : null;
     const steps: RequestStep[] =
       request.kind === 'transfer'
         ? request.items.map((item) => ({
             labelId: item.labelId,
-            run: (tx) => this.transfer(tx, item),
+            run: (tx) => this.transfer(tx, item, transferComment(requestNumber)),
           }))
         : request.items.map(({ labelId }) => ({ labelId, run: (tx) => this.dispose(tx, labelId) }));
     // Блокировки берутся в одном порядке, чтобы встречные заявки не взаимоблокировались.
@@ -65,6 +70,7 @@ export class StockRequestsService {
     return {
       kind: request.kind,
       createdAt: new Date().toISOString(),
+      requestNumber,
       items: request.items.map(({ labelId }) => {
         const label = labelsById.get(labelId);
         if (!label) throw labelNotFound();
@@ -76,7 +82,11 @@ export class StockRequestsService {
     };
   }
 
-  private async transfer(tx: Transaction, { labelId, quantity }: TransferItem) {
+  private async transfer(
+    tx: Transaction,
+    { labelId, quantity }: TransferItem,
+    comment: string | null,
+  ) {
     const movements = new MovementsRepository(tx);
     assertDeltaAllowed(await movements.lockLabel(labelId), -quantity, true);
     const updated = await movements.applyDelta(labelId, -quantity, { usableOnly: true });
@@ -86,7 +96,7 @@ export class StockRequestsService {
       delta: -quantity,
       quantityAfter: updated.quantity,
       reason: 'transfer',
-      comment: null,
+      comment,
     });
   }
 

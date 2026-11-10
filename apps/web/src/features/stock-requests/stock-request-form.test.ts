@@ -27,6 +27,7 @@ describe('buildStockRequest', () => {
         ok: true,
         input: {
           kind: 'transfer',
+          requestNumber: '',
           items: [
             { labelId: 'b', quantity: 7 },
             { labelId: 'a', quantity: 1_000 },
@@ -93,7 +94,7 @@ describe('buildStockRequest', () => {
     it('пробелы вокруг и ведущие нули допустимы', () => {
       expect(buildStockRequest('transfer', [SECOND], { b: ' 007 ' })).toEqual({
         ok: true,
-        input: { kind: 'transfer', items: [{ labelId: 'b', quantity: 7 }] },
+        input: { kind: 'transfer', requestNumber: '', items: [{ labelId: 'b', quantity: 7 }] },
       });
     });
 
@@ -116,7 +117,37 @@ describe('buildStockRequest', () => {
     it('пустой список — пустая заявка (её отсекает сервер)', () => {
       expect(buildStockRequest('transfer', [], {})).toEqual({
         ok: true,
-        input: { kind: 'transfer', items: [] },
+        input: { kind: 'transfer', requestNumber: '', items: [] },
+      });
+    });
+  });
+
+  describe('номер заявки 1С', () => {
+    it('передаётся как введён: обрезку и пустое → null делает общая схема', () => {
+      const result = buildStockRequest('transfer', [SECOND], { b: '1' }, '  ЗП-00042 ');
+      expect(result.ok && result.input).toEqual({
+        kind: 'transfer',
+        requestNumber: '  ЗП-00042 ',
+        items: [{ labelId: 'b', quantity: 1 }],
+      });
+    });
+
+    it('без номера — пустая строка', () => {
+      const result = buildStockRequest('transfer', [SECOND], { b: '1' });
+      expect(result.ok && result.input).toMatchObject({ requestNumber: '' });
+    });
+
+    it('ошибка количества — запроса нет, номер не мешает', () => {
+      expect(buildStockRequest('transfer', [SECOND], { b: '0' }, 'ЗП-1')).toEqual({
+        ok: false,
+        errors: { b: 'Укажите количество больше нуля' },
+      });
+    });
+
+    it('у утилизации номер не уходит', () => {
+      expect(buildStockRequest('disposal', [FIRST], {}, 'ЗП-1')).toEqual({
+        ok: true,
+        input: { kind: 'disposal', items: [{ labelId: 'a' }] },
       });
     });
   });

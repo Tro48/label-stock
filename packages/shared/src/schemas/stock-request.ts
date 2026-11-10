@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { quantitySchema, uuidSchema } from './fields';
+import { plainTextSchema, quantitySchema, uuidSchema } from './fields';
 import { labelSchema } from './label';
 import { movementSchema } from './movement';
 
@@ -12,6 +12,16 @@ export const STOCK_REQUEST_TITLES: Readonly<Record<StockRequestKind, string>> = 
 };
 
 export const STOCK_REQUEST_MAX_ITEMS = 100;
+export const REQUEST_NUMBER_MAX_LENGTH = 50;
+
+/** Номер заявки из 1С: свободный текст, пустая строка — «номера нет». */
+const requestNumberSchema = plainTextSchema()
+  .max(REQUEST_NUMBER_MAX_LENGTH, {
+    message: `Номер заявки не длиннее ${REQUEST_NUMBER_MAX_LENGTH} символов`,
+  })
+  .transform((value) => (value === '' ? null : value))
+  .nullable()
+  .optional();
 
 const hasUniqueLabels = (items: readonly { labelId: string }[]) =>
   new Set(items.map((item) => item.labelId)).size === items.length;
@@ -33,6 +43,7 @@ function itemsSchema<Item extends z.ZodType<{ labelId: string }>>(itemSchema: It
 export const createStockRequestSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('transfer'),
+    requestNumber: requestNumberSchema,
     items: itemsSchema(
       z.object({
         labelId: uuidSchema,
@@ -49,6 +60,8 @@ export const createStockRequestSchema = z.discriminatedUnion('kind', [
 export const stockRequestResultSchema = z.object({
   kind: z.enum(STOCK_REQUEST_KINDS),
   createdAt: z.string(),
+  /** Номер заявки в 1С, если его ввели; у утилизации всегда null. */
+  requestNumber: z.string().nullable(),
   /** В том же порядке, что и в запросе. */
   items: z.array(z.object({ label: labelSchema, movement: movementSchema })),
 });

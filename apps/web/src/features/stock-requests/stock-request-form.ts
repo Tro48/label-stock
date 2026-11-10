@@ -22,11 +22,12 @@ function parseTransferAmount(label: Label, amount: string): number | string {
   return parsed.data;
 }
 
-/** amounts — введённое количество по id позиции; для утилизации не нужно. */
+/** amounts — введённое количество по id позиции; оно и номер заявки 1С для утилизации не нужны. */
 export function buildStockRequest(
   kind: StockRequestKind,
   labels: readonly Label[],
   amounts: Readonly<Record<string, string>>,
+  requestNumber = '',
 ): BuildRequestResult {
   if (kind === 'disposal') {
     return { ok: true, input: { kind, items: labels.map((label) => ({ labelId: label.id })) } };
@@ -39,5 +40,5 @@ export function buildStockRequest(
     else items.push({ labelId: label.id, quantity: result });
   }
   if (Object.keys(errors).length > 0) return { ok: false, errors };
-  return { ok: true, input: { kind, items } };
+  return { ok: true, input: { kind, requestNumber, items } };
 }

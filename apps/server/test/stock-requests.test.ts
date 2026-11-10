@@ -441,3 +441,115 @@ describe('заявка: атомарность', () => {
     expect(await snapshot(context, [first!, last!])).toEqual(before);
   });
 });
+
+describe('заявка на перемещение: номер заявки в 1С', () => {
+  const context = useTestApp();
+
+  const readComments = async (labelId: string) => {
+    const result = await context.pool.query<{ reason: string; comment: string | null }>(
+      'SELECT reason, comment FROM stock_movements WHERE label_id = $1 ORDER BY created_at, id',
+      [labelId],
+    );
+    return result.rows.filter((row) => row.reason !== 'created' && row.reason !== 'print');
+  };
+
+  const transferBoth = async (labels: Label[], requestNumber?: unknown) => {
+    const response = await postStockRequest(context.app, {
+      kind: 'transfer',
+      ...(requestNumber === undefined ? {} : { requestNumber }),
+      items: labels.map((label) => ({ labelId: label.id, quantity: 1 })),
+    });
+    return response;
+  };
+
+  it('номер в ответе и в комментарии движения у каждой позиции', async () => {
+    const labels = await createSortedLabels(context, 3);
+    const response = await transferBoth(labels, 'ЗП-00042');
+    expect(response.statusCode, response.body).toBe(201);
+    const result = response.json<StockRequestResult>();
+    expect(result.requestNumber).toBe('ЗП-00042');
+    expect(result.items.map((item) => item.movement.comment)).toEqual(
+      Array(3).fill('Заявка 1С № ЗП-00042'),
+    );
+    for (const label of labels) {
+      expect(await readComments(label.id)).toEqual([
+        { reason: 'transfer', comment: 'Заявка 1С № ЗП-00042' },
+      ]);
+    }
+  });
+
+  it('пробелы вокруг номера обрезаются и в ответе, и в журнале', async () => {
+    const [label] = await createSortedLabels(context, 1);
+    const response = await transferBoth([label!], '  ЗП-7 ');
+    expect(response.json<StockRequestResult>().requestNumber).toBe('ЗП-7');
+    expect(await readComments(label!.id)).toEqual([
+      { reason: 'transfer', comment: 'Заявка 1С № ЗП-7' },
+    ]);
+  });
+
+  it.each([
+    ['без поля', undefined],
+    ['пустая строка', ''],
+    ['только пробелы', '   '],
+    ['null', null],
+  ])('%s — requestNumber null, комментарий null', async (_name, requestNumber) => {
+    const labels = await createSortedLabels(context, 2);
+    const response = await transferBoth(labels, requestNumber);
+    expect(response.statusCode, response.body).toBe(201);
+    const result = response.json<StockRequestResult>();
+    expect(result.requestNumber).toBeNull();
+    expect(result.items.every((item) => item.movement.comment === null)).toBe(true);
+    for (const label of labels) {
+      expect(await readComments(label.id)).toEqual([{ reason: 'transfer', comment: null }]);
+    }
+  });
+
+  it('ровно 50 символов — проходит', async () => {
+    const [label] = await createSortedLabels(context, 1);
+    const response = await transferBoth([label!], '1'.repeat(50));
+    expect(response.statusCode, response.body).toBe(201);
+    expect(response.json<StockRequestResult>().requestNumber).toBe('1'.repeat(50));
+  });
+
+  it.each([
+    ['51 символ', '1'.repeat(51)],
+    ['\\0 в номере', 'ЗП\u00001'],
+    ['номер числом', 42],
+  ])('%s → 400, ничего не списано', async (_name, requestNumber) => {
+    const labels = await createSortedLabels(context, 2);
+    const before = await snapshot(context, labels);
+    const response = await transferBoth(labels, requestNumber);
+    expect(response.statusCode).toBe(400);
+    expect(response.json().code).toBe('VALIDATION_ERROR');
+    expect(await snapshot(context, labels)).toEqual(before);
+  });
+
+  it('заявка с номером откатилась целиком — комментариев в журнале нет', async () => {
+    const [first, last] = await createSortedLabels(context, 2, { usable: 5, obsolete: 0 });
+    const response = await postStockRequest(context.app, {
+      kind: 'transfer',
+      requestNumber: 'ЗП-9',
+      items: [
+        { labelId: first!.id, quantity: 1 },
+        { labelId: last!.id, quantity: 6 },
+      ],
+    });
+    expect(response.statusCode).toBe(422);
+    expect(await readComments(first!.id)).toEqual([]);
+    expect(await readComments(last!.id)).toEqual([]);
+  });
+
+  it('утилизация: requestNumber в ответе null, даже если его прислали; комментарий null', async () => {
+    const [label] = await createSortedLabels(context, 1, { usable: 1, obsolete: 3 });
+    const response = await postStockRequest(context.app, {
+      kind: 'disposal',
+      requestNumber: 'ЗП-1',
+      items: [{ labelId: label!.id }],
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    const result = response.json<StockRequestResult>();
+    expect(result.requestNumber).toBeNull();
+    expect(result.items[0]!.movement.comment).toBeNull();
+    expect(await readComments(label!.id)).toEqual([{ reason: 'disposal', comment: null }]);
+  });
+});

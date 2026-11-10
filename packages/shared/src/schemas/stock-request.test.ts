@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { INT32_MAX } from './fields';
 import {
+  REQUEST_NUMBER_MAX_LENGTH,
   STOCK_REQUEST_MAX_ITEMS,
   createStockRequestSchema,
   stockRequestResultSchema,
@@ -51,7 +52,104 @@ describe('createStockRequestSchema', () => {
     });
   });
 
+  describe('transfer: requestNumber', () => {
+    const transferWith = (requestNumber: unknown) => ({
+      kind: 'transfer',
+      requestNumber,
+      items: [{ labelId: ID_A, quantity: 1 }],
+    });
+    const parsedNumber = (requestNumber: unknown) => {
+      const result = parse(transferWith(requestNumber));
+      return result.success && 'requestNumber' in result.data
+        ? result.data.requestNumber
+        : 'ошибка';
+    };
+
+    it('принимает номер как есть', () => {
+      expect(parsedNumber('ЗП-00042')).toBe('ЗП-00042');
+    });
+
+    it(`ровно ${REQUEST_NUMBER_MAX_LENGTH} символов — граница проходит`, () => {
+      expect(parsedNumber('1'.repeat(REQUEST_NUMBER_MAX_LENGTH))).toBe(
+        '1'.repeat(REQUEST_NUMBER_MAX_LENGTH),
+      );
+    });
+
+    it(`${REQUEST_NUMBER_MAX_LENGTH + 1} символ → отказ с сообщением о длине`, () => {
+      expect(firstMessage(transferWith('1'.repeat(REQUEST_NUMBER_MAX_LENGTH + 1)))).toBe(
+        `Номер заявки не длиннее ${REQUEST_NUMBER_MAX_LENGTH} символов`,
+      );
+    });
+
+    it('кириллица считается по символам: 50 букв проходят', () => {
+      expect(parsedNumber('Я'.repeat(REQUEST_NUMBER_MAX_LENGTH))).toBe(
+        'Я'.repeat(REQUEST_NUMBER_MAX_LENGTH),
+      );
+    });
+
+    it('пробелы по краям обрезаются', () => {
+      expect(parsedNumber('  ЗП-1 \t')).toBe('ЗП-1');
+    });
+
+    it('длина считается после обрезки: 50 символов с пробелами вокруг проходят', () => {
+      expect(parsedNumber(`  ${'1'.repeat(REQUEST_NUMBER_MAX_LENGTH)}  `)).toBe(
+        '1'.repeat(REQUEST_NUMBER_MAX_LENGTH),
+      );
+    });
+
+    it('пробелы внутри сохраняются', () => {
+      expect(parsedNumber('ЗП 00 42')).toBe('ЗП 00 42');
+    });
+
+    it.each([
+      ['пустая строка', ''],
+      ['только пробелы', '   '],
+      ['пробельные символы', ' \t\n '],
+    ])('%s → null', (_name, value) => {
+      expect(parsedNumber(value)).toBeNull();
+    });
+
+    it('null → null', () => {
+      expect(parsedNumber(null)).toBeNull();
+    });
+
+    it('без поля — заявка валидна, номера нет', () => {
+      const result = createStockRequestSchema.parse({
+        kind: 'transfer',
+        items: [{ labelId: ID_A, quantity: 1 }],
+      });
+      expect(result).toEqual({ kind: 'transfer', items: [{ labelId: ID_A, quantity: 1 }] });
+    });
+
+    it.each([
+      ['\\0 в середине', 'ЗП\u00001'],
+      ['только \\0', '\u0000'],
+    ])('%s → «Недопустимый символ»', (_name, value) => {
+      expect(firstMessage(transferWith(value))).toBe('Недопустимый символ');
+    });
+
+    it.each([42, true, {}, ['ЗП-1']])('не строка (%s) → отказ', (value) => {
+      expect(accepts(transferWith(value))).toBe(false);
+    });
+  });
+
   describe('disposal', () => {
+    it('requestNumber у утилизации отбрасывается', () => {
+      expect(
+        createStockRequestSchema.parse({
+          kind: 'disposal',
+          requestNumber: 'ЗП-1',
+          items: [{ labelId: ID_A }],
+        }),
+      ).toEqual({ kind: 'disposal', items: [{ labelId: ID_A }] });
+    });
+
+    it('даже некорректный requestNumber у утилизации не мешает', () => {
+      expect(
+        accepts({ kind: 'disposal', requestNumber: '1'.repeat(500), items: [{ labelId: ID_A }] }),
+      ).toBe(true);
+    });
+
     it('принимает позиции без количества', () => {
       const input = { kind: 'disposal', items: [{ labelId: ID_A }, { labelId: ID_B }] };
       expect(createStockRequestSchema.parse(input)).toEqual(input);
@@ -125,7 +223,21 @@ describe('createStockRequestSchema', () => {
 describe('stockRequestResultSchema', () => {
   it('отклоняет неизвестный kind в ответе', () => {
     expect(
-      stockRequestResultSchema.safeParse({ kind: 'consumption', createdAt: '', items: [] }).success,
+      stockRequestResultSchema.safeParse({
+        kind: 'consumption',
+        createdAt: '',
+        requestNumber: null,
+        items: [],
+      }).success,
     ).toBe(false);
+  });
+
+  it('requestNumber в ответе обязателен: строка или null', () => {
+    const base = { kind: 'transfer', createdAt: '', items: [] };
+    expect(stockRequestResultSchema.safeParse({ ...base, requestNumber: 'ЗП-1' }).success).toBe(
+      true,
+    );
+    expect(stockRequestResultSchema.safeParse({ ...base, requestNumber: null }).success).toBe(true);
+    expect(stockRequestResultSchema.safeParse(base).success).toBe(false);
   });
 });

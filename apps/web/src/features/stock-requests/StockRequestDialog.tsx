@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  REQUEST_NUMBER_MAX_LENGTH,
   STOCK_REQUEST_TITLES,
   type Label,
   type StockRequestKind,
@@ -44,6 +45,7 @@ export function StockRequestDialog({
   );
   const skipped = kind === 'disposal' ? labels.filter((label) => label.obsoleteQuantity === 0) : [];
   const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [requestNumber, setRequestNumber] = useState('');
   const [rowErrors, setRowErrors] = useState<RowErrors>({});
   const [formError, setFormError] = useState<string>();
   const [result, setResult] = useState<StockRequestResult>();
@@ -66,7 +68,7 @@ export function StockRequestDialog({
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const built = buildStockRequest(kind, items, amounts);
+    const built = buildStockRequest(kind, items, amounts, requestNumber);
     if (!built.ok) {
       setRowErrors(built.errors);
       setFormError('Исправьте количество в отмеченных строках');
@@ -124,6 +126,21 @@ export function StockRequestDialog({
               ? 'Укажите, сколько забрать. Остаток спишется сразу, затем откроется печать.'
               : 'Старый макет спишется целиком, затем откроется печать.'}
           </p>
+          {kind === 'transfer' && (
+            <div className="field field--inline">
+              <label htmlFor={`${ids}-request-number`} className="field__label">
+                Номер заявки в 1С <span className="field__hint">(необязательно)</span>
+              </label>
+              <input
+                id={`${ids}-request-number`}
+                className="input"
+                autoComplete="off"
+                maxLength={REQUEST_NUMBER_MAX_LENGTH}
+                value={requestNumber}
+                onChange={(event) => setRequestNumber(event.target.value)}
+              />
+            </div>
+          )}
           {skipped.length > 0 && (
             <p className="alert alert--warning">
               Нечего утилизировать, в заявку не попали: {skipped.map(labelTitle).join(', ')}

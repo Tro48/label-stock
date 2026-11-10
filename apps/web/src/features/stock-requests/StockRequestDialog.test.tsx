@@ -36,10 +36,12 @@ const THIRD = makeLabel({
 function makeResult(
   kind: StockRequestKind,
   items: { label: Label; delta: number }[],
+  requestNumber: string | null = null,
 ): StockRequestResult {
   return {
     kind,
     createdAt: '2026-11-10T09:30:00.000Z',
+    requestNumber,
     items: items.map(({ label, delta }, index) => ({
       label: {
         ...label,
@@ -120,6 +122,7 @@ describe('StockRequestDialog: перемещение', () => {
       url: '/api/stock-requests',
       body: {
         kind: 'transfer',
+        requestNumber: '',
         items: [
           { labelId: FIRST.id, quantity: 1_000 },
           { labelId: SECOND.id, quantity: 5 },
@@ -383,6 +386,7 @@ describe('StockRequestDialog: перемещение', () => {
       await waitFor(() => expect(requests).toHaveLength(1));
       expect(requests[0]?.body).toEqual({
         kind: 'transfer',
+        requestNumber: '',
         items: [{ labelId: SECOND.id, quantity: 8 }],
       });
     });
@@ -474,5 +478,96 @@ describe('StockRequestDialog: утилизация', () => {
     await user.click(submitButton());
     expect(await screen.findByRole('alert')).toHaveTextContent(message);
     expect(within(rowOf('101')).getByText(message)).toBeInTheDocument();
+  });
+});
+
+describe('StockRequestDialog: номер заявки в 1С', () => {
+  const numberInput = () =>
+    screen.getByRole('textbox', { name: 'Номер заявки в 1С (необязательно)' });
+
+  it('у перемещения поле подписано, необязательно и ограничено 50 символами', () => {
+    setup('transfer', [SECOND]);
+    expect(numberInput()).toHaveValue('');
+    expect(numberInput()).toHaveAttribute('maxlength', '50');
+    expect(numberInput()).not.toBeRequired();
+  });
+
+  it('у утилизации поля нет', () => {
+    setup('disposal', [FIRST]);
+    expect(screen.queryByRole('textbox', { name: /Номер заявки в 1С/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  });
+
+  it('поле достижимо с клавиатуры до полей количества', async () => {
+    const { user } = setup('transfer', [SECOND]);
+    numberInput().focus();
+    await user.tab();
+    expect(amountInput('202')).toHaveFocus();
+  });
+
+  it('введённый номер уходит в запрос', async () => {
+    const { requests, user } = setup('transfer', [SECOND]);
+    await user.type(numberInput(), 'ЗП-00042');
+    await user.type(amountInput('202'), '3');
+    await user.click(submitButton());
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0]?.body).toEqual({
+      kind: 'transfer',
+      requestNumber: 'ЗП-00042',
+      items: [{ labelId: SECOND.id, quantity: 3 }],
+    });
+  });
+
+  it('больше 50 символов ввести нельзя', async () => {
+    const { requests, user } = setup('transfer', [SECOND]);
+    await user.type(numberInput(), '1'.repeat(60));
+    expect(numberInput()).toHaveValue('1'.repeat(50));
+    await user.type(amountInput('202'), '3');
+    await user.click(submitButton());
+    await waitFor(() => expect(requests).toHaveLength(1));
+    expect(requests[0]?.body).toMatchObject({ requestNumber: '1'.repeat(50) });
+  });
+
+  it('ошибка сервера по номеру — в role=alert, введённый номер сохраняется', async () => {
+    const { user } = setup('transfer', [SECOND], () =>
+      errorResponse(400, 'VALIDATION_ERROR', 'Недопустимый символ', {
+        requestNumber: 'Недопустимый символ',
+      }),
+    );
+    await user.type(numberInput(), 'ЗП-1');
+    await user.type(amountInput('202'), '3');
+    await user.click(submitButton());
+    expect(await screen.findByRole('alert')).toHaveTextContent('Недопустимый символ');
+    expect(numberInput()).toHaveValue('ЗП-1');
+  });
+
+  it('лист печатает «По заявке 1С № …» и в окне, и в листе для печати', async () => {
+    const result = makeResult('transfer', [{ label: SECOND, delta: -3 }], 'ЗП-00042');
+    const { user } = setup('transfer', [SECOND], () => jsonResponse(201, result));
+    await user.type(numberInput(), 'ЗП-00042');
+    await user.type(amountInput('202'), '3');
+    await user.click(submitButton());
+    const sheet = await within(screen.getByRole('dialog')).findByRole('article');
+    expect(within(sheet).getByText('По заявке 1С № ЗП-00042')).toBeInTheDocument();
+    const printSheet = document.body.querySelector(':scope > .print-sheet')!;
+    expect(printSheet).toHaveTextContent('По заявке 1С № ЗП-00042');
+  });
+
+  it('без номера строки «По заявке 1С» на листе нет', async () => {
+    const result = makeResult('transfer', [{ label: SECOND, delta: -3 }], null);
+    const { user } = setup('transfer', [SECOND], () => jsonResponse(201, result));
+    await user.type(amountInput('202'), '3');
+    await user.click(submitButton());
+    const sheet = await within(screen.getByRole('dialog')).findByRole('article');
+    expect(sheet).not.toHaveTextContent('По заявке 1С');
+    expect(document.body).not.toHaveTextContent('По заявке 1С');
+  });
+
+  it('у утилизации строки с номером на листе нет', async () => {
+    const result = makeResult('disposal', [{ label: FIRST, delta: -500 }], null);
+    const { user } = setup('disposal', [FIRST], () => jsonResponse(201, result));
+    await user.click(submitButton());
+    await within(screen.getByRole('dialog')).findByRole('article');
+    expect(document.body).not.toHaveTextContent('По заявке 1С');
   });
 });
