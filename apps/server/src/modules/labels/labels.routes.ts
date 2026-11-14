@@ -2,11 +2,13 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import {
   barcodeParamsSchema,
+  createLabelResultSchema,
   createLabelSchema,
   errorResponseSchema,
   idParamsSchema,
   labelSchema,
   listLabelsQuerySchema,
+  mergeDuplicatesResultSchema,
   paginatedSchema,
   updateLabelSchema,
 } from '@label-stock/shared';
@@ -61,12 +63,28 @@ export const labelsRoutes =
       {
         schema: {
           tags,
-          summary: 'Создать позицию',
+          summary: 'Создать позицию; при совпадении номера макета добавить остаток к существующей',
           body: createLabelSchema,
-          response: { 201: labelSchema, 400: errorResponseSchema, 409: errorResponseSchema },
+          response: {
+            201: createLabelResultSchema,
+            400: errorResponseSchema,
+            409: errorResponseSchema,
+          },
         },
       },
       async (request, reply) => reply.status(201).send(await service.create(request.body)),
+    );
+
+    app.post(
+      '/labels/merge-duplicates',
+      {
+        schema: {
+          tags,
+          summary: 'Найти дубли по номеру макета и объединить их в одну позицию на номер',
+          response: { 200: mergeDuplicatesResultSchema },
+        },
+      },
+      () => service.mergeDuplicatesByLayout(),
     );
 
     app.patch(

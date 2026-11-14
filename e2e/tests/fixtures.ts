@@ -31,7 +31,7 @@ export async function createLabelViaApi(
     },
   });
   expect(response.status()).toBe(201);
-  return (await response.json()) as CreatedLabel;
+  return ((await response.json()) as { label: CreatedLabel }).label;
 }
 
 /**

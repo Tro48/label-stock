@@ -1,4 +1,10 @@
-import type { Label, Movement, MovementResult, Paginated } from '@label-stock/shared';
+import type {
+  CreateLabelResult,
+  Label,
+  Movement,
+  MovementResult,
+  Paginated,
+} from '@label-stock/shared';
 
 export function makeLabel(overrides: Partial<Label> = {}): Label {
   return {
@@ -17,6 +23,13 @@ export function makeLabel(overrides: Partial<Label> = {}): Label {
     deletedAt: null,
     ...overrides,
   };
+}
+
+export function makeCreateLabelResult(
+  label: Partial<Label> = {},
+  overrides: Partial<CreateLabelResult> = {},
+): CreateLabelResult {
+  return { label: makeLabel(label), merged: false, movement: null, ...overrides };
 }
 
 export function makeMovement(overrides: Partial<Movement> = {}): Movement {

@@ -91,7 +91,7 @@ describe('контрагенты', () => {
       payload: { counterpartyId: counterparty.id, printedAt: '2026-11-01', quantity: 1 },
     });
     await rename(counterparty.id, 'Новое');
-    const card = await context.app.inject({ url: `/api/labels/${label.json().id}` });
+    const card = await context.app.inject({ url: `/api/labels/${label.json().label.id}` });
     expect(card.json().counterparty.name).toBe('Новое');
   });
 

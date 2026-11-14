@@ -1,11 +1,14 @@
 import { useCallback, useId, useRef, useState } from 'react';
 import type {
+  CreateLabelResult,
   Label,
+  MergeDuplicatesResult,
   MovementResult,
   StockRequestKind,
   StockRequestResult,
 } from '@label-stock/shared';
 import { ApiError, errorMessage } from '../../shared/api/client';
+import { formatQuantity } from '../../shared/format';
 import { useNotifications } from '../../shared/ui/notifications';
 import { describeOperationResult, type StockOperation } from '../movements/stock-operation';
 import { ScanStatus, type ScanState } from '../scanner/ScanStatus';
@@ -20,13 +23,23 @@ import { LabelFormDialog, type LabelFormMode } from './LabelFormDialog';
 import { labelTitle } from './label-title';
 import { LabelsList } from './LabelsList';
 import { LabelsToolbar } from './LabelsToolbar';
+import { MergeDuplicatesDialog } from './MergeDuplicatesDialog';
 import { useLabelsQueryState } from './use-labels-query-state';
 
 type Modal =
   | { kind: 'card'; labelId: string; initialLabel?: Label | undefined }
   | { kind: 'form'; mode: LabelFormMode }
   | { kind: 'delete'; label: Label }
+  | { kind: 'merge-duplicates' }
   | { kind: 'request'; requestKind: StockRequestKind; labels: readonly Label[] };
+
+/** Текст после слияния при создании: номер макета был занят, остаток ушёл к существующей позиции. */
+function describeMergedResult(result: CreateLabelResult): string {
+  const { label, movement } = result;
+  const remainder = `остаток ${formatQuantity(label.quantity)} шт.`;
+  if (!movement) return `Позиция с номером макета ${label.layoutNumber} уже есть, ${remainder}`;
+  return `Добавлено ${formatQuantity(movement.delta)} шт. к позиции с номером макета ${label.layoutNumber}, ${remainder}`;
+}
 
 export function StockScreen() {
   const headingId = useId();
@@ -99,10 +112,26 @@ export function StockScreen() {
   };
 
   // Фильтры не трогаем: список остаётся полным, новая позиция появится в нём после перечитывания.
-  const handleSaved = (_label: Label, created: boolean) => {
+  const handleSaved = (result: CreateLabelResult, created: boolean) => {
     setModal(null);
     setScanState({ kind: 'idle' });
+    if (result.merged) {
+      notify(describeMergedResult(result), {
+        label: 'Открыть',
+        onClick: () => openCard(result.label),
+      });
+      return;
+    }
     notify(created ? 'Позиция создана' : 'Изменения сохранены');
+  };
+
+  const handleDuplicatesMerged = (result: MergeDuplicatesResult) => {
+    setModal(null);
+    notify(
+      result.groups === 0
+        ? 'Дубли по номеру макета не найдены'
+        : `Объединено позиций: ${result.merged}, групп дублей: ${result.groups}, перенесено ${formatQuantity(result.movedQuantity)} шт.`,
+    );
   };
 
   return (
@@ -119,6 +148,7 @@ export function StockScreen() {
         onlyEmpty={query.onlyEmpty}
         onOnlyEmptyChange={query.setOnlyEmpty}
         onCreate={() => setModal({ kind: 'form', mode: { kind: 'create' } })}
+        onMergeDuplicates={() => setModal({ kind: 'merge-duplicates' })}
       />
       <ScanStatus
         state={scanState}
@@ -210,6 +240,13 @@ export function StockScreen() {
           label={modal.label}
           onClose={closeModal}
           onDeleted={handleDeleted}
+          returnFocusTo={focusSearch}
+        />
+      )}
+      {modal?.kind === 'merge-duplicates' && (
+        <MergeDuplicatesDialog
+          onClose={closeModal}
+          onMerged={handleDuplicatesMerged}
           returnFocusTo={focusSearch}
         />
       )}

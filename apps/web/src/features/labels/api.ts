@@ -1,9 +1,11 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   CreateLabelInput,
+  CreateLabelResult,
   CreateMovementInput,
   Label,
   ListLabelsParams,
+  MergeDuplicatesResult,
   Movement,
   MovementResult,
   Paginated,
@@ -64,7 +66,7 @@ export function useLabelMutation<Variables, Result>(
 
 export function useCreateLabel() {
   return useLabelMutation((input: CreateLabelInput) =>
-    apiRequest<Label>('/labels', { method: 'POST', body: input }),
+    apiRequest<CreateLabelResult>('/labels', { method: 'POST', body: input }),
   );
 }
 
@@ -87,5 +89,12 @@ export function useRestoreLabel() {
 export function useCreateMovement() {
   return useLabelMutation(({ id, input }: { id: string; input: CreateMovementInput }) =>
     apiRequest<MovementResult>(`/labels/${id}/movements`, { method: 'POST', body: input }),
+  );
+}
+
+/** Сводит активные позиции с одинаковым номером макета к одной позиции на номер. */
+export function useMergeDuplicateLayouts() {
+  return useLabelMutation(() =>
+    apiRequest<MergeDuplicatesResult>('/labels/merge-duplicates', { method: 'POST' }),
   );
 }

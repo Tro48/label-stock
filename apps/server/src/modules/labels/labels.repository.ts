@@ -4,6 +4,7 @@ import {
   count,
   desc,
   eq,
+  gt,
   ilike,
   inArray,
   isNotNull,
@@ -159,6 +160,28 @@ export class LabelsRepository {
       .where(and(eq(labels[field], value), isNull(labels.deletedAt)))
       .for('update');
     return row;
+  }
+
+  /** Номера макетов, которые заняты больше чем одной активной позицией. */
+  async findDuplicateLayoutNumbers(): Promise<string[]> {
+    const rows = await this.db
+      .select({ layoutNumber: labels.layoutNumber })
+      .from(labels)
+      .where(and(isNull(labels.deletedAt), isNotNull(labels.layoutNumber)))
+      .groupBy(labels.layoutNumber)
+      .having(gt(count(), 1));
+    return rows.map((row) => row.layoutNumber!);
+  }
+
+  /** Активные позиции с этими номерами, заблокированные до конца транзакции, от старых к новым. */
+  async lockActiveByLayoutNumbers(numbers: readonly string[]): Promise<LabelRow[]> {
+    if (numbers.length === 0) return [];
+    return this.db
+      .select()
+      .from(labels)
+      .where(and(isNull(labels.deletedAt), inArray(labels.layoutNumber, [...numbers])))
+      .orderBy(asc(labels.layoutNumber), asc(labels.createdAt), asc(labels.id))
+      .for('update');
   }
 
   async insert(values: NewLabelValues): Promise<LabelRow> {

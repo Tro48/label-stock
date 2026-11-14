@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { afterAll, beforeAll, beforeEach, inject } from 'vitest';
-import type { Counterparty, CreateLabelInput, Label } from '@label-stock/shared';
+import type { Counterparty, CreateLabelInput, CreateLabelResult, Label } from '@label-stock/shared';
 import { buildApp } from '../src/app';
 import { createPool } from '../src/db/client';
 
@@ -65,7 +65,7 @@ export async function createLabel(
   if (response.statusCode !== 201) {
     throw new Error(`Позиция не создана: ${response.statusCode} ${response.body}`);
   }
-  return response.json<Label>();
+  return response.json<CreateLabelResult>().label;
 }
 
 export function postMovement(app: FastifyInstance, labelId: string, payload: object) {

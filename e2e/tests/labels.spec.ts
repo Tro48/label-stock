@@ -87,7 +87,7 @@ test('весь путь с клавиатуры: создать позицию �
   await expect(page.getByText('Списано 15 шт., остаток 25 шт.')).toBeVisible();
 });
 
-test('дубль номера макета: ошибка у поля и ссылка на занявшую позицию', async ({
+test('дубль номера макета: остаток добавляется к существующей позиции', async ({
   page,
   request,
 }) => {
@@ -97,11 +97,27 @@ test('дубль номера макета: ошибка у поля и ссыл
   const form = page.getByRole('dialog', { name: 'Новая позиция' });
   await form.getByLabel(/Контрагент/).fill('E2E Дубль');
   await form.getByLabel('Номер макета').fill(existing.layoutNumber!);
+  await form.getByLabel(/Остаток/).fill('40');
   await form.getByRole('button', { name: 'Сохранить' }).click();
 
-  await expect(form.getByText('Номер макета уже занят другой позицией')).toBeVisible();
-  await form.getByRole('button', { name: 'Открыть позицию с этим номером' }).click();
+  await expect(form).toBeHidden();
+  await expect(
+    page.getByText(
+      `Добавлено 40 шт. к позиции с номером макета ${existing.layoutNumber!}, остаток ${existing.quantity + 40} шт.`,
+    ),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Открыть', exact: true }).click();
   await expect(page.getByRole('dialog', { name: 'Карточка позиции' })).toContainText(
     existing.layoutNumber!,
   );
+});
+
+test('кнопка «Объединить дубли»: список без дублей', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Объединить дубли' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Объединить дубли по номеру макета?' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Объединить', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText('Дубли по номеру макета не найдены')).toBeVisible();
 });

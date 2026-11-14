@@ -76,6 +76,32 @@ export class MovementsRepository {
     return row!;
   }
 
+  /**
+   * Переносит остаток сливаемой позиции: количество и «старый макет» растут вместе,
+   * поэтому инварант obsoleteQuantity <= quantity сохраняется. undefined — сумма вылезает за int4.
+   */
+  async absorbStock(
+    labelId: string,
+    quantity: number,
+    obsoleteQuantity: number,
+  ): Promise<LabelRow | undefined> {
+    const [row] = await this.db
+      .update(labels)
+      .set({
+        quantity: sql`${labels.quantity} + ${quantity}`,
+        obsoleteQuantity: sql`${labels.obsoleteQuantity} + ${obsoleteQuantity}`,
+        updatedAt: sql`now()`,
+      })
+      .where(
+        and(
+          eq(labels.id, labelId),
+          sql`${labels.quantity}::bigint + ${quantity} BETWEEN 0 AND ${INT32_MAX}`,
+        ),
+      )
+      .returning();
+    return row;
+  }
+
   /** Блокирует строку до конца транзакции: инвентаризация считает дельту от актуального остатка. */
   async lockLabel(labelId: string): Promise<LabelRow | undefined> {
     const [row] = await this.db.select().from(labels).where(eq(labels.id, labelId)).for('update');

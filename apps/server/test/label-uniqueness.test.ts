@@ -21,16 +21,24 @@ describe('позиции: уникальность номера макета и 
   const restore = (id: string) =>
     context.app.inject({ method: 'POST', url: `/api/labels/${id}/restore` });
 
-  it.each([
-    ['номер макета', 'layoutNumber', { layoutNumber: '123' }, { layoutNumber: ' 123 ' }],
-    ['штрихкод', 'barcode', { barcode: 'ABC123' }, { barcode: 'ФИС 123' }],
-  ])('дубль: %s → 409 с field и conflictingId', async (_name, field, first, second) => {
-    const existing = await createLabel(context.app, first);
-    const response = await post(second);
+  it('дубль штрихкода → 409 с field и conflictingId', async () => {
+    const existing = await createLabel(context.app, { barcode: 'ФИС 123' });
+    const response = await post({ barcode: 'ABC123' });
     expect(response.statusCode).toBe(409);
     expect(response.json()).toMatchObject({
       code: 'DUPLICATE',
-      details: { field, conflictingId: existing.id },
+      details: { field: 'barcode', conflictingId: existing.id },
+    });
+  });
+
+  it('дубль номера макета → не 409, а слияние с занявшей позицией', async () => {
+    const existing = await createLabel(context.app, { layoutNumber: '123' });
+    const response = await post({ layoutNumber: ' 123 ' });
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({
+      merged: true,
+      label: { id: existing.id, layoutNumber: '123', quantity: 101 },
+      movement: { delta: 1, reason: 'print' },
     });
   });
 

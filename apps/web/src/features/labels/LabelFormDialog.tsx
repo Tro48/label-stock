@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import {
   hasEan13ChecksumWarning,
   normalizeBarcode,
+  type CreateLabelResult,
   type DuplicateDetails,
   type Label,
 } from '@label-stock/shared';
@@ -27,7 +28,7 @@ export type LabelFormMode = { kind: 'create'; barcode?: string } | { kind: 'edit
 interface LabelFormDialogProps {
   mode: LabelFormMode;
   onClose: () => void;
-  onSaved: (label: Label, created: boolean) => void;
+  onSaved: (result: CreateLabelResult, created: boolean) => void;
   onOpenLabel: (labelId: string) => void;
   returnFocusTo?: () => HTMLElement | null | undefined;
 }
@@ -74,13 +75,17 @@ export function LabelFormDialog({
         printedAt: values.printedAt,
         comment: values.comment,
       };
-      const saved = isCreate
-        ? await createLabel.mutateAsync({ ...fields, quantity: values.quantity })
-        : await updateLabel.mutateAsync({
-            id: mode.label.id,
-            input: { ...fields, version: mode.label.version },
-          });
-      onSaved(saved, isCreate);
+      if (isCreate) {
+        // При совпадении номера макета сервер сливает позицию с существующей: merged в ответе.
+        const result = await createLabel.mutateAsync({ ...fields, quantity: values.quantity });
+        onSaved(result, true);
+      } else {
+        const label = await updateLabel.mutateAsync({
+          id: mode.label.id,
+          input: { ...fields, version: mode.label.version },
+        });
+        onSaved({ label, merged: false, movement: null }, false);
+      }
     } catch (error) {
       const outcome = interpretServerError(error);
       for (const [field, message] of Object.entries(outcome.fieldErrors)) {

@@ -89,8 +89,8 @@ describe('устойчивость к нестандартному вводу', 
       },
     });
     expect(response.statusCode).toBe(201);
-    expect(response.json()).toMatchObject({ version: 1, deletedAt: null, externalId: null });
-    expect(response.json().id).not.toBe('00000000-0000-4000-8000-000000000001');
+    expect(response.json().label).toMatchObject({ version: 1, deletedAt: null, externalId: null });
+    expect(response.json().label.id).not.toBe('00000000-0000-4000-8000-000000000001');
   });
 
   it('PATCH не принимает quantity и deletedAt', async () => {

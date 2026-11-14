@@ -2,20 +2,35 @@ import {
   ERROR_CODES,
   normalizeBarcode,
   type CreateLabelData,
+  type CreateLabelResult,
   type Label,
   type ListLabelsQuery,
+  type MergeDuplicatesResult,
   type Paginated,
   type UpdateLabelData,
 } from '@label-stock/shared';
 import type { Database } from '../../db/client';
-import { AppError, labelDeleted, notFound, versionConflict } from '../../shared/errors';
+import type { LabelRow } from '../../db/schema';
+import {
+  AppError,
+  labelDeleted,
+  notFound,
+  uniqueViolationConstraint,
+  versionConflict,
+} from '../../shared/errors';
 import { CounterpartiesRepository } from '../counterparties/counterparties.repository';
-import { MovementsRepository } from '../movements/movements.repository';
+import { MovementsRepository, type NewMovementValues } from '../movements/movements.repository';
+import { toMovementDto } from '../movements/movements.service';
+import { assertDeltaAllowed } from '../movements/stock-rules';
 import { toLabelDto } from './label.mapper';
 import { toDuplicateError, type UniqueValues } from './label-uniqueness';
-import { LabelsRepository } from './labels.repository';
+import { LabelsRepository, type NewLabelValues } from './labels.repository';
 
 const labelNotFound = () => notFound('Позиция не найдена');
+
+const LAYOUT_NUMBER_UNIQUE_INDEX = 'labels_layout_number_active_uq';
+const MERGE_ON_CREATE_COMMENT = 'Совпал номер макета';
+const DEDUPE_COMMENT = 'Объединение дублей по номеру макета';
 
 export class LabelsService {
   private readonly labels: LabelsRepository;
@@ -44,10 +59,14 @@ export class LabelsService {
     return toLabelDto(row);
   }
 
-  /** Начальный остаток сразу попадает в журнал как `created`, чтобы история сходилась с остатком. */
-  async create(data: CreateLabelData): Promise<Label> {
+  /**
+   * Создаёт позицию; начальный остаток сразу попадает в журнал как `created`, чтобы история
+   * сходилась с остатком. Если номер макета уже занят, позиция не создаётся — остаток формы
+   * добавляется к занявшей позиции (см. mergeIntoLayoutDuplicate).
+   */
+  async create(data: CreateLabelData): Promise<CreateLabelResult> {
     await this.assertCounterpartyExists(data.counterpartyId);
-    const values = {
+    const values: NewLabelValues = {
       counterpartyId: data.counterpartyId,
       layoutNumber: data.layoutNumber ?? null,
       barcode: data.barcode ?? null,
@@ -55,22 +74,14 @@ export class LabelsService {
       quantity: data.quantity,
       comment: data.comment ?? null,
     };
-    const labelId = await this.withDuplicateMapping(values, undefined, () =>
-      this.db.transaction(async (tx) => {
-        const label = await new LabelsRepository(tx).insert(values);
-        if (label.quantity > 0) {
-          await new MovementsRepository(tx).insert({
-            labelId: label.id,
-            delta: label.quantity,
-            quantityAfter: label.quantity,
-            reason: 'created',
-            comment: null,
-          });
-        }
-        return label.id;
-      }),
-    );
-    return this.getById(labelId);
+    try {
+      return await this.insertNew(values);
+    } catch (error) {
+      if (uniqueViolationConstraint(error) !== LAYOUT_NUMBER_UNIQUE_INDEX || !values.layoutNumber) {
+        throw (await toDuplicateError(error, this.labels, values, undefined)) ?? error;
+      }
+      return this.mergeIntoLayoutDuplicate(values);
+    }
   }
 
   async update(id: string, { version, ...patch }: UpdateLabelData): Promise<Label> {
@@ -102,6 +113,135 @@ export class LabelsService {
     return this.getById(id);
   }
 
+  /**
+   * Ищет активные позиции с одинаковым номером макета и сводит каждую группу к одной:
+   * остаток и «старый макет» переносятся на самую раннюю позицию группы, остальные удаляются.
+   */
+  async mergeDuplicatesByLayout(): Promise<MergeDuplicatesResult> {
+    return this.db.transaction(async (tx) => {
+      const labels = new LabelsRepository(tx);
+      const numbers = await labels.findDuplicateLayoutNumbers();
+      if (numbers.length === 0) return { groups: 0, merged: 0, movedQuantity: 0 };
+
+      const movements = new MovementsRepository(tx);
+      const groups = groupByLayoutNumber(await labels.lockActiveByLayoutNumbers(numbers));
+      let merged = 0;
+      let movedQuantity = 0;
+      for (const group of groups) {
+        const [keeper, ...duplicates] = group;
+        for (const duplicate of duplicates) {
+          if (duplicate.quantity > 0 || duplicate.obsoleteQuantity > 0) {
+            const updated = await this.absorbDuplicateStock(movements, keeper.id, duplicate);
+            if (duplicate.quantity > 0) {
+              await movements.insert({
+                labelId: keeper.id,
+                delta: duplicate.quantity,
+                quantityAfter: updated.quantity,
+                reason: 'correction',
+                comment: DEDUPE_COMMENT,
+              });
+              movedQuantity += duplicate.quantity;
+            }
+          }
+          await labels.softDelete(duplicate.id);
+          merged += 1;
+        }
+      }
+      return { groups: groups.length, merged, movedQuantity };
+    });
+  }
+
+  /** Переносит остаток дубля на оставшуюся позицию; повторяет под блокировкой, если сумма отклонена. */
+  private async absorbDuplicateStock(
+    movements: MovementsRepository,
+    keeperId: string,
+    duplicate: LabelRow,
+  ): Promise<LabelRow> {
+    let updated = await movements.absorbStock(
+      keeperId,
+      duplicate.quantity,
+      duplicate.obsoleteQuantity,
+    );
+    if (!updated) {
+      assertDeltaAllowed(await movements.lockLabel(keeperId), duplicate.quantity, false);
+      updated = await movements.absorbStock(
+        keeperId,
+        duplicate.quantity,
+        duplicate.obsoleteQuantity,
+      );
+      if (!updated) throw new Error('UPDATE отклонён под блокировкой строки');
+    }
+    return updated;
+  }
+
+  private async insertNew(values: NewLabelValues): Promise<CreateLabelResult> {
+    const { labelId, movement } = await this.db.transaction(async (tx) => {
+      const label = await new LabelsRepository(tx).insert(values);
+      const movement = await this.recordInitialStock(
+        new MovementsRepository(tx),
+        label.id,
+        label.quantity,
+      );
+      return { labelId: label.id, movement };
+    });
+    return {
+      label: await this.getById(labelId),
+      merged: false,
+      movement: movement && toMovementDto(movement),
+    };
+  }
+
+  /** Добавляет остаток формы к позиции, занявшей номер макета. Позиция могла быть удалена в момент между попытками — тогда создаём новую. */
+  private async mergeIntoLayoutDuplicate(values: NewLabelValues): Promise<CreateLabelResult> {
+    const merged = await this.db.transaction(async (tx) => {
+      const labels = new LabelsRepository(tx);
+      const existing = values.layoutNumber
+        ? await labels.lockActiveByUniqueField('layoutNumber', values.layoutNumber)
+        : undefined;
+      if (!existing) return undefined;
+      const movements = new MovementsRepository(tx);
+      let updated = await movements.applyDelta(existing.id, values.quantity);
+      if (!updated) {
+        assertDeltaAllowed(await movements.lockLabel(existing.id), values.quantity, false);
+        updated = await movements.applyDelta(existing.id, values.quantity);
+        if (!updated) throw new Error('UPDATE отклонён под блокировкой строки');
+      }
+      const movement = await this.recordInitialStock(movements, existing.id, values.quantity, {
+        reason: 'print',
+        comment: MERGE_ON_CREATE_COMMENT,
+        quantityAfter: updated.quantity,
+      });
+      return { labelId: existing.id, movement };
+    });
+    if (!merged) return this.insertNew(values);
+    return {
+      label: await this.getById(merged.labelId),
+      merged: true,
+      movement: merged.movement && toMovementDto(merged.movement),
+    };
+  }
+
+  /** Начальный остаток позиции или добавленный при слиянии — одна запись в журнале. */
+  private async recordInitialStock(
+    movements: MovementsRepository,
+    labelId: string,
+    quantity: number,
+    overrides: {
+      reason?: NewMovementValues['reason'];
+      comment?: string | null;
+      quantityAfter?: number;
+    } = {},
+  ): Promise<Awaited<ReturnType<MovementsRepository['insert']>> | null> {
+    if (quantity <= 0) return null;
+    return movements.insert({
+      labelId,
+      delta: quantity,
+      quantityAfter: overrides.quantityAfter ?? quantity,
+      reason: overrides.reason ?? 'created',
+      comment: overrides.comment ?? null,
+    });
+  }
+
   private async assertCounterpartyExists(counterpartyId: string): Promise<void> {
     if (await this.counterparties.findById(counterpartyId)) return;
     throw new AppError(400, ERROR_CODES.validation, 'Проверьте заполнение полей', {
@@ -120,4 +260,15 @@ export class LabelsService {
       throw (await toDuplicateError(error, this.labels, values, excludeId)) ?? error;
     }
   }
+}
+
+/** Группирует заблокированные строки по номеру макета; строки в группе от старых к новым. */
+function groupByLayoutNumber(rows: LabelRow[]): [LabelRow, ...LabelRow[]][] {
+  const groups = new Map<string, LabelRow[]>();
+  for (const row of rows) {
+    const group = groups.get(row.layoutNumber!);
+    if (group) group.push(row);
+    else groups.set(row.layoutNumber!, [row]);
+  }
+  return [...groups.values()].filter((group) => group.length > 1) as [LabelRow, ...LabelRow[]][];
 }

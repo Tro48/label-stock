@@ -38,6 +38,16 @@ export const createLabelSchema = z.object({
   comment: commentSchema.optional(),
 });
 
+/** Результат объединения дублей: в каждой группе остаётся одна позиция, остатки переносятся на неё. */
+export const mergeDuplicatesResultSchema = z.object({
+  /** Групп активных позиций с одинаковым номером макета. */
+  groups: z.int().min(0),
+  /** Позиций объединено: удалено после переноса остатка. */
+  merged: z.int().min(0),
+  /** Штук перенесено на оставшиеся позиции. */
+  movedQuantity: z.int().min(0),
+});
+
 /** Остаток здесь не меняется: только через операции с дельтой. */
 export const updateLabelSchema = z.object({
   version: z.int().min(1),
@@ -75,6 +85,7 @@ export type CreateLabelInput = z.input<typeof createLabelSchema>;
 export type CreateLabelData = z.output<typeof createLabelSchema>;
 export type UpdateLabelInput = z.input<typeof updateLabelSchema>;
 export type UpdateLabelData = z.output<typeof updateLabelSchema>;
+export type MergeDuplicatesResult = z.infer<typeof mergeDuplicatesResultSchema>;
 export type LabelSortField = (typeof LABEL_SORT_FIELDS)[number];
 export type ListLabelsQuery = z.output<typeof listLabelsQuerySchema>;
 /** Параметры списка на стороне клиента: до сериализации в query string. */

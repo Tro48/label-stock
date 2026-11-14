@@ -73,7 +73,16 @@ export const movementResultSchema = z.object({
   movement: movementSchema.nullable(),
 });
 
+export const createLabelResultSchema = z.object({
+  label: labelSchema,
+  /** true — новая позиция не создавалась: остаток добавлен к позиции с тем же номером макета. */
+  merged: z.boolean(),
+  /** Движение остатка: null при merged и нулевом остатке формы. */
+  movement: movementSchema.nullable(),
+});
+
 export type Movement = z.infer<typeof movementSchema>;
 export type CreateMovementInput = z.input<typeof createMovementSchema>;
 export type CreateMovementData = z.output<typeof createMovementSchema>;
 export type MovementResult = z.infer<typeof movementResultSchema>;
+export type CreateLabelResult = z.infer<typeof createLabelResultSchema>;

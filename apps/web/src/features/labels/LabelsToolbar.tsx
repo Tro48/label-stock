@@ -10,6 +10,7 @@ interface LabelsToolbarProps {
   onlyEmpty: boolean;
   onOnlyEmptyChange: (value: boolean) => void;
   onCreate: () => void;
+  onMergeDuplicates: () => void;
 }
 
 export function LabelsToolbar({
@@ -21,6 +22,7 @@ export function LabelsToolbar({
   onlyEmpty,
   onOnlyEmptyChange,
   onCreate,
+  onMergeDuplicates,
 }: LabelsToolbarProps) {
   const ids = useId();
 
@@ -66,6 +68,10 @@ export function LabelsToolbar({
           />
           Только нулевые
         </label>
+
+        <button type="button" className="button button--secondary" onClick={onMergeDuplicates}>
+          Объединить дубли
+        </button>
 
         <button type="button" className="button button--primary" onClick={onCreate}>
           <span aria-hidden="true">+ </span>Добавить

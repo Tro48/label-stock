@@ -8,7 +8,7 @@ import {
   mockFetchRoutes,
   type RecordedRequest,
 } from '../../test/fetch-mock';
-import { makeLabel } from '../../test/fixtures';
+import { makeCreateLabelResult, makeLabel, makeMovement } from '../../test/fixtures';
 import { renderWithProviders } from '../../test/render';
 import { LabelFormDialog, type LabelFormMode } from './LabelFormDialog';
 
@@ -31,7 +31,7 @@ function setup(mode: LabelFormMode, routes: Record<string, Handler> = {}) {
   const fetchMocks = mockFetchRoutes({
     'GET /api/counterparties': () => jsonResponse(200, []),
     'POST /api/counterparties': () => jsonResponse(201, COUNTERPARTY),
-    'POST /api/labels': () => jsonResponse(201, makeLabel()),
+    'POST /api/labels': () => jsonResponse(201, makeCreateLabelResult()),
     ...routes,
   });
   const onClose = vi.fn();
@@ -89,7 +89,7 @@ describe('LabelFormDialog: создание', () => {
   });
 
   it('сабмит: сначала POST /api/counterparties, затем POST /api/labels', async () => {
-    const saved = makeLabel({ layoutNumber: '007' });
+    const saved = makeCreateLabelResult({ layoutNumber: '007' });
     const { user, field, requests, onSaved } = setup(
       { kind: 'create' },
       { 'POST /api/labels': () => jsonResponse(201, saved) },
@@ -117,6 +117,29 @@ describe('LabelFormDialog: создание', () => {
         },
       },
     ]);
+  });
+
+  it('сервер ответил слиянием по номеру макета: onSaved получает merged=true и движение', async () => {
+    const result = makeCreateLabelResult(
+      { layoutNumber: '007', quantity: 1300 },
+      {
+        merged: true,
+        movement: makeMovement({
+          delta: 100,
+          quantityAfter: 1300,
+          reason: 'print',
+          comment: 'Совпал номер макета',
+        }),
+      },
+    );
+    const { user, field, onSaved } = setup(
+      { kind: 'create' },
+      { 'POST /api/labels': () => jsonResponse(201, result) },
+    );
+    await user.type(field(/Контрагент/), 'Ромашка');
+    await user.type(field(/Номер макета/), '007');
+    await user.click(screen.getByRole('button', { name: 'Сохранить' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(result, true));
   });
 
   it('ошибка создания контрагента — позиция не создаётся, текст в role=alert', async () => {
@@ -226,7 +249,7 @@ describe('LabelFormDialog: создание', () => {
                 field: 'layoutNumber',
                 conflictingId: 'label-7',
               })
-            : jsonResponse(201, makeLabel());
+            : jsonResponse(201, makeCreateLabelResult());
         },
       },
     );
@@ -290,7 +313,9 @@ describe('LabelFormDialog: редактирование', () => {
     );
     await user.clear(field(/Комментарий/));
     await user.click(screen.getByRole('button', { name: 'Сохранить' }));
-    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(saved, false));
+    await waitFor(() =>
+      expect(onSaved).toHaveBeenCalledWith({ label: saved, merged: false, movement: null }, false),
+    );
     const patch = writes(requests).find((r) => r.method === 'PATCH');
     expect(patch?.body).toEqual({
       counterpartyId: COUNTERPARTY.id,
