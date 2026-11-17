@@ -9,7 +9,6 @@ const SEARCH_DEBOUNCE_MS = 300;
 export function useLabelsQueryState(deleted: boolean) {
   const [search, setSearch] = useState('');
   const [counterpartyName, setCounterpartyName] = useState('');
-  const [onlyEmpty, setOnlyEmpty] = useState(false);
   const [sortState, setSortState] = useState<SortState>({ sort: 'counterparty', order: 'asc' });
   const [page, setPage] = useState(1);
   const debouncedSearch = useDebouncedValue(search.trim(), SEARCH_DEBOUNCE_MS);
@@ -25,7 +24,6 @@ export function useLabelsQueryState(deleted: boolean) {
   const params: ListLabelsParams = {
     search: debouncedSearch || undefined,
     counterpartyName: debouncedCounterpartyName || undefined,
-    onlyEmpty,
     deleted,
     sort: sortState.sort,
     order: sortState.order,
@@ -38,12 +36,10 @@ export function useLabelsQueryState(deleted: boolean) {
     setSearch: resetPage(setSearch),
     counterpartyName,
     setCounterpartyName: resetPage(setCounterpartyName),
-    onlyEmpty,
-    setOnlyEmpty: resetPage(setOnlyEmpty),
     sortState,
     setSortState: resetPage(setSortState),
     page,
     setPage,
-    hasFilters: Boolean(debouncedSearch || debouncedCounterpartyName || onlyEmpty),
+    hasFilters: Boolean(debouncedSearch || debouncedCounterpartyName),
   };
 }

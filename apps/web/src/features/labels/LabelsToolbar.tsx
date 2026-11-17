@@ -7,8 +7,6 @@ interface LabelsToolbarProps {
   onSearchChange: (value: string) => void;
   counterpartyName: string;
   onCounterpartyNameChange: (value: string) => void;
-  onlyEmpty: boolean;
-  onOnlyEmptyChange: (value: boolean) => void;
   onCreate: () => void;
   onMergeDuplicates: () => void;
 }
@@ -19,8 +17,6 @@ export function LabelsToolbar({
   onSearchChange,
   counterpartyName,
   onCounterpartyNameChange,
-  onlyEmpty,
-  onOnlyEmptyChange,
   onCreate,
   onMergeDuplicates,
 }: LabelsToolbarProps) {
@@ -53,21 +49,13 @@ export function LabelsToolbar({
           </label>
           <CounterpartyInput
             id={`${ids}-counterparty`}
+            type="search"
             className="input"
             placeholder="Все"
             value={counterpartyName}
             onChange={(event) => onCounterpartyNameChange(event.target.value)}
           />
         </div>
-
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={onlyEmpty}
-            onChange={(event) => onOnlyEmptyChange(event.target.checked)}
-          />
-          Только нулевые
-        </label>
 
         <button type="button" className="button button--secondary" onClick={onMergeDuplicates}>
           Объединить дубли

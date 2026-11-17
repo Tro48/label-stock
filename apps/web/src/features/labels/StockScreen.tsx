@@ -145,8 +145,6 @@ export function StockScreen() {
         onSearchChange={query.setSearch}
         counterpartyName={query.counterpartyName}
         onCounterpartyNameChange={query.setCounterpartyName}
-        onlyEmpty={query.onlyEmpty}
-        onOnlyEmptyChange={query.setOnlyEmpty}
         onCreate={() => setModal({ kind: 'form', mode: { kind: 'create' } })}
         onMergeDuplicates={() => setModal({ kind: 'merge-duplicates' })}
       />

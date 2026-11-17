@@ -51,7 +51,7 @@ test('весь путь с клавиатуры: создать позицию �
   await page.goto('/');
   const layoutNumber = `00${Date.now()}`.slice(0, 14);
 
-  // Tab-порядок: ссылка «к содержимому», навигация, поиск, фильтр, чекбокс, «Добавить».
+  // Tab-порядок: ссылка «к содержимому», навигация, поиск, фильтр, действия с позициями.
   const addButton = page.getByRole('button', { name: 'Добавить' });
   await tabUntilFocused(page, addButton);
   await page.keyboard.press('Enter');
@@ -110,6 +110,50 @@ test('дубль номера макета: остаток добавляетс�
   await expect(page.getByRole('dialog', { name: 'Карточка позиции' })).toContainText(
     existing.layoutNumber!,
   );
+});
+
+test('фильтр контрагента: значение очищается кликом по родному крестику поля поиска, чекбокс «Только нулевые» не отображается', async ({
+  page,
+}) => {
+  await page.goto('/');
+  const input = page.getByLabel('Контрагент', { exact: true });
+  const searchField = page.getByLabel('Найти или отсканировать штрихкод', { exact: true });
+
+  await expect(page.getByRole('checkbox', { name: 'Только нулевые' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Очистить контрагента' })).toHaveCount(0);
+  await expect(searchField).toHaveAttribute('type', 'search');
+  await expect(input).toHaveAttribute('type', 'search');
+
+  await input.fill('Ромашка');
+  const box = await input.boundingBox();
+  if (!box) throw new Error('Не удалось получить размеры поля контрагента');
+  await page.mouse.click(box.x + box.width - 40, box.y + box.height / 2);
+
+  await expect(input).toHaveValue('');
+  await expect(input).toBeFocused();
+});
+
+test('клик по родному крестику не смещает поле фильтра и соседние кнопки', async ({ page }) => {
+  await page.goto('/');
+  const input = page.getByLabel('Контрагент', { exact: true });
+  const mergeButton = page.getByRole('button', { name: 'Объединить дубли' });
+  const addButton = page.getByRole('button', { name: 'Добавить' });
+
+  const rects = async () =>
+    Promise.all([input.boundingBox(), mergeButton.boundingBox(), addButton.boundingBox()]);
+
+  const initialRects = await rects();
+
+  await input.fill('Ромашка');
+  expect(await rects()).toEqual(initialRects);
+
+  const box = await input.boundingBox();
+  if (!box) throw new Error('Не удалось получить размеры поля контрагента');
+  await page.mouse.click(box.x + box.width - 40, box.y + box.height / 2);
+
+  expect(await rects()).toEqual(initialRects);
+  await expect(input).toHaveValue('');
+  await expect(input).toBeFocused();
 });
 
 test('кнопка «Объединить дубли»: список без дублей', async ({ page }) => {
