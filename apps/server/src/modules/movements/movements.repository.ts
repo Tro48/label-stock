@@ -1,7 +1,19 @@
-import { and, count, desc, eq, isNull, sql } from 'drizzle-orm';
-import { INT32_MAX, type MovementReason } from '@label-stock/shared';
-import { labels, stockMovements, type LabelRow, type MovementRow } from '../../db/schema';
+import { and, count, desc, eq, isNull, like, or, sql, type SQL } from 'drizzle-orm';
+import {
+  INT32_MAX,
+  normalizeBarcode,
+  type ListMovementsQuery,
+  type MovementReason,
+} from '@label-stock/shared';
+import {
+  counterparties,
+  labels,
+  stockMovements,
+  type LabelRow,
+  type MovementRow,
+} from '../../db/schema';
 import type { DbExecutor } from '../../db/client';
+import { escapeLikePattern } from '../../shared/like';
 
 export interface NewMovementValues {
   labelId: string;
@@ -11,12 +23,29 @@ export interface NewMovementValues {
   comment: string | null;
 }
 
+export interface MovementWithLabelRow {
+  movement: MovementRow;
+  label: LabelRow;
+  counterpartyName: string;
+}
+
 export interface DeltaOptions {
   printedAt?: string | undefined;
   /** Допечатка нового макета: весь остаток до неё становится подлежащим утилизации. */
   layoutChanged?: boolean;
   /** Списание и перемещение берут только годный остаток: старый макет уходит лишь утилизацией. */
   usableOnly?: boolean;
+}
+
+function buildGlobalSearchCondition(search: string): SQL | undefined {
+  const layout = escapeLikePattern(search);
+  const barcode = escapeLikePattern(normalizeBarcode(search));
+  return or(
+    like(labels.layoutNumber, `${layout}%`),
+    barcode
+      ? or(like(labels.barcode, `${barcode}%`), like(labels.barcode, `%${barcode}`))
+      : undefined,
+  );
 }
 
 export class MovementsRepository {
@@ -136,6 +165,34 @@ export class MovementsRepository {
         .limit(pageSize)
         .offset((page - 1) * pageSize),
       this.db.select({ total: count() }).from(stockMovements).where(where),
+    ]);
+    return { rows, total: totalRow?.total ?? 0 };
+  }
+
+  async listAll(
+    query: ListMovementsQuery,
+  ): Promise<{ rows: MovementWithLabelRow[]; total: number }> {
+    const where = query.search ? buildGlobalSearchCondition(query.search) : undefined;
+    const selection = {
+      movement: stockMovements,
+      label: labels,
+      counterpartyName: counterparties.name,
+    };
+    const [rows, [totalRow]] = await Promise.all([
+      this.db
+        .select(selection)
+        .from(stockMovements)
+        .innerJoin(labels, eq(stockMovements.labelId, labels.id))
+        .innerJoin(counterparties, eq(labels.counterpartyId, counterparties.id))
+        .where(where)
+        .orderBy(desc(stockMovements.createdAt), desc(stockMovements.id))
+        .limit(query.pageSize)
+        .offset((query.page - 1) * query.pageSize),
+      this.db
+        .select({ total: count() })
+        .from(stockMovements)
+        .innerJoin(labels, eq(stockMovements.labelId, labels.id))
+        .where(where),
     ]);
     return { rows, total: totalRow?.total ?? 0 };
   }

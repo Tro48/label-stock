@@ -1,14 +1,17 @@
 import { useSyncExternalStore } from 'react';
 
-export type Route = 'stock' | 'deleted';
+export type Route = 'stock' | 'history' | 'deleted';
 
 export const ROUTE_HREFS: Readonly<Record<Route, string>> = {
   stock: '#/',
+  history: '#/history',
   deleted: '#/deleted',
 };
 
 function readRoute(): Route {
-  return window.location.hash === ROUTE_HREFS.deleted ? 'deleted' : 'stock';
+  if (window.location.hash === ROUTE_HREFS.history) return 'history';
+  if (window.location.hash === ROUTE_HREFS.deleted) return 'deleted';
+  return 'stock';
 }
 
 function subscribe(onChange: () => void): () => void {
@@ -16,7 +19,7 @@ function subscribe(onChange: () => void): () => void {
   return () => window.removeEventListener('hashchange', onChange);
 }
 
-/** Два экрана — хватает hash-маршрутизации без библиотеки; ссылки остаются обычными <a>. */
+/** Три экрана — хватает hash-маршрутизации без библиотеки; ссылки остаются обычными <a>. */
 export function useHashRoute(): Route {
   return useSyncExternalStore(subscribe, readRoute, () => 'stock');
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { INT32_MAX } from './fields';
-import { createMovementSchema } from './movement';
+import { createMovementSchema, listMovementsQuerySchema, movementListItemSchema } from './movement';
 
 const accepts = (input: unknown) => createMovementSchema.safeParse(input).success;
 
@@ -110,4 +110,37 @@ describe('createMovementSchema: причины заявок', () => {
       expect(accepts({ reason, delta: -1 })).toBe(false);
     },
   );
+});
+
+describe('общая журнал', () => {
+  it('общий журнал: параметры по умолчанию и DTO позиции', () => {
+    expect(listMovementsQuerySchema.parse({})).toEqual({ page: 1, pageSize: 50 });
+    expect(listMovementsQuerySchema.parse({ search: ' 00123 ', pageSize: '200' })).toEqual({
+      search: '00123',
+      page: 1,
+      pageSize: 200,
+    });
+
+    const item = {
+      id: 'movement-1',
+      labelId: 'label-1',
+      delta: -5,
+      quantityAfter: 95,
+      reason: 'consumption',
+      comment: null,
+      createdAt: '2026-11-17T10:00:00.000Z',
+      label: {
+        id: 'label-1',
+        counterparty: { id: 'counterparty-1', name: 'Ромашка' },
+        layoutNumber: '00123',
+        barcode: 'ABC123456',
+        deletedAt: null,
+      },
+    };
+    expect(movementListItemSchema.parse(item)).toEqual(item);
+  });
+
+  it('общий журнал: pageSize больше 200 отклоняется', () => {
+    expect(listMovementsQuerySchema.safeParse({ pageSize: 201 }).success).toBe(false);
+  });
 });

@@ -3,6 +3,8 @@ import {
   createMovementSchema,
   errorResponseSchema,
   idParamsSchema,
+  listMovementsQuerySchema,
+  movementListItemSchema,
   movementResultSchema,
   movementSchema,
   paginatedSchema,
@@ -50,5 +52,18 @@ export const movementsRoutes =
         },
       },
       (request) => service.list(request.params.id, request.query.page, request.query.pageSize),
+    );
+
+    app.get(
+      '/movements',
+      {
+        schema: {
+          tags,
+          summary: 'Общая история изменений остатков',
+          querystring: listMovementsQuerySchema,
+          response: { 200: paginatedSchema(movementListItemSchema), 400: errorResponseSchema },
+        },
+      },
+      (request) => service.listAll(request.query),
     );
   };

@@ -3,12 +3,14 @@ import type { ImportResult } from '@label-stock/shared';
 import { ImportDialog } from './features/import/ImportDialog';
 import { DeletedScreen } from './features/labels/DeletedScreen';
 import { StockScreen } from './features/labels/StockScreen';
+import { HistoryScreen } from './features/movements/HistoryScreen';
 import { ThemeSelect } from './features/theme/ThemeSelect';
 import { useNotifications } from './shared/ui/notifications';
 import { ROUTE_HREFS, useHashRoute, type Route } from './shared/use-hash-route';
 
 const NAV_ITEMS: readonly { route: Route; text: string }[] = [
   { route: 'stock', text: 'Остатки' },
+  { route: 'history', text: 'История' },
   { route: 'deleted', text: 'Удалённые' },
 ];
 
@@ -63,7 +65,9 @@ export function App() {
         </div>
       </header>
       <main id="main" tabIndex={-1} className="app-main">
-        {route === 'stock' ? <StockScreen /> : <DeletedScreen />}
+        {route === 'stock' && <StockScreen />}
+        {route === 'history' && <HistoryScreen />}
+        {route === 'deleted' && <DeletedScreen />}
       </main>
       {importOpen && (
         <ImportDialog onClose={() => setImportOpen(false)} onImported={handleImported} />

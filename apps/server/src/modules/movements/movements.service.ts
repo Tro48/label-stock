@@ -1,6 +1,8 @@
 import {
   type CreateMovementData,
+  type ListMovementsQuery,
   type Movement,
+  type MovementListItem,
   type MovementResult,
   type Paginated,
 } from '@label-stock/shared';
@@ -8,7 +10,11 @@ import type { Database, Transaction } from '../../db/client';
 import type { MovementRow } from '../../db/schema';
 import { LabelsRepository } from '../labels/labels.repository';
 import { toLabelDto } from '../labels/label.mapper';
-import { MovementsRepository, type DeltaOptions } from './movements.repository';
+import {
+  MovementsRepository,
+  type DeltaOptions,
+  type MovementWithLabelRow,
+} from './movements.repository';
 import { assertActive, assertDeltaAllowed, labelNotFound } from './stock-rules';
 
 export function toMovementDto(row: MovementRow): Movement {
@@ -20,6 +26,19 @@ export function toMovementDto(row: MovementRow): Movement {
     reason: row.reason,
     comment: row.comment,
     createdAt: row.createdAt.toISOString(),
+  };
+}
+
+export function toMovementListItemDto(row: MovementWithLabelRow): MovementListItem {
+  return {
+    ...toMovementDto(row.movement),
+    label: {
+      id: row.label.id,
+      counterparty: { id: row.label.counterpartyId, name: row.counterpartyName },
+      layoutNumber: row.label.layoutNumber,
+      barcode: row.label.barcode,
+      deletedAt: row.label.deletedAt?.toISOString() ?? null,
+    },
   };
 }
 
@@ -53,6 +72,16 @@ export class MovementsService {
       pageSize,
     );
     return { items: rows.map(toMovementDto), total, page, pageSize };
+  }
+
+  async listAll(query: ListMovementsQuery): Promise<Paginated<MovementListItem>> {
+    const { rows, total } = await new MovementsRepository(this.db).listAll(query);
+    return {
+      items: rows.map(toMovementListItemDto),
+      total,
+      page: query.page,
+      pageSize: query.pageSize,
+    };
   }
 
   private async applyDelta(

@@ -1,0 +1,443 @@
+diff --git a/apps/server/src/modules/movements/movements.repository.ts b/apps/server/src/modules/movements/movements.repository.ts
+index b6b4eb1..92f8408 100644
+--- a/apps/server/src/modules/movements/movements.repository.ts
++++ b/apps/server/src/modules/movements/movements.repository.ts
+@@ -1,31 +1,60 @@
+-import { and, count, desc, eq, isNull, sql } from 'drizzle-orm';
+-import { INT32_MAX, type MovementReason } from '@label-stock/shared';
+-import { labels, stockMovements, type LabelRow, type MovementRow } from '../../db/schema';
++import { and, count, desc, eq, isNull, like, or, sql, type SQL } from 'drizzle-orm';
++import {
++  INT32_MAX,
++  normalizeBarcode,
++  type ListMovementsQuery,
++  type MovementReason,
++} from '@label-stock/shared';
++import {
++  counterparties,
++  labels,
++  stockMovements,
++  type LabelRow,
++  type MovementRow,
++} from '../../db/schema';
+ import type { DbExecutor } from '../../db/client';
++import { escapeLikePattern } from '../../shared/like';
+ 
+ export interface NewMovementValues {
+   labelId: string;
+   delta: number;
+   quantityAfter: number;
+   reason: MovementReason;
+   comment: string | null;
+ }
+ 
++export interface MovementWithLabelRow {
++  movement: MovementRow;
++  label: LabelRow;
++  counterpartyName: string;
++}
++
+ export interface DeltaOptions {
+   printedAt?: string | undefined;
+   /** Допечатка нового макета: весь остаток до неё становится подлежащим утилизации. */
+   layoutChanged?: boolean;
+   /** Списание и перемещение берут только годный остаток: старый макет уходит лишь утилизацией. */
+   usableOnly?: boolean;
+ }
+ 
++function buildGlobalSearchCondition(search: string): SQL | undefined {
++  const layout = escapeLikePattern(search);
++  const barcode = escapeLikePattern(normalizeBarcode(search));
++  return or(
++    like(labels.layoutNumber, `${layout}%`),
++    barcode
++      ? or(like(labels.barcode, `${barcode}%`), like(labels.barcode, `%${barcode}`))
++      : undefined,
++  );
++}
++
+ export class MovementsRepository {
+   constructor(private readonly db: DbExecutor) {}
+ 
+   async insert(values: NewMovementValues): Promise<MovementRow> {
+     const [row] = await this.db.insert(stockMovements).values(values).returning();
+     return row!;
+   }
+ 
+   /**
+    * Атомарное изменение остатка одним UPDATE: параллельные списания не затирают друг друга.
+@@ -132,11 +161,39 @@ export class MovementsRepository {
+         .select()
+         .from(stockMovements)
+         .where(where)
+         .orderBy(desc(stockMovements.createdAt), desc(stockMovements.id))
+         .limit(pageSize)
+         .offset((page - 1) * pageSize),
+       this.db.select({ total: count() }).from(stockMovements).where(where),
+     ]);
+     return { rows, total: totalRow?.total ?? 0 };
+   }
++
++  async listAll(
++    query: ListMovementsQuery,
++  ): Promise<{ rows: MovementWithLabelRow[]; total: number }> {
++    const where = query.search ? buildGlobalSearchCondition(query.search) : undefined;
++    const selection = {
++      movement: stockMovements,
++      label: labels,
++      counterpartyName: counterparties.name,
++    };
++    const [rows, [totalRow]] = await Promise.all([
++      this.db
++        .select(selection)
++        .from(stockMovements)
++        .innerJoin(labels, eq(stockMovements.labelId, labels.id))
++        .innerJoin(counterparties, eq(labels.counterpartyId, counterparties.id))
++        .where(where)
++        .orderBy(desc(stockMovements.createdAt), desc(stockMovements.id))
++        .limit(query.pageSize)
++        .offset((query.page - 1) * query.pageSize),
++      this.db
++        .select({ total: count() })
++        .from(stockMovements)
++        .innerJoin(labels, eq(stockMovements.labelId, labels.id))
++        .where(where),
++    ]);
++    return { rows, total: totalRow?.total ?? 0 };
++  }
+ }
+diff --git a/apps/server/src/modules/movements/movements.routes.ts b/apps/server/src/modules/movements/movements.routes.ts
+index c549f3c..8a84db9 100644
+--- a/apps/server/src/modules/movements/movements.routes.ts
++++ b/apps/server/src/modules/movements/movements.routes.ts
+@@ -1,15 +1,17 @@
+ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
+ import {
+   createMovementSchema,
+   errorResponseSchema,
+   idParamsSchema,
++  listMovementsQuerySchema,
++  movementListItemSchema,
+   movementResultSchema,
+   movementSchema,
+   paginatedSchema,
+   paginationQuerySchema,
+ } from '@label-stock/shared';
+ import type { MovementsService } from './movements.service';
+ 
+ const tags = ['Движения остатка'];
+ 
+ export const movementsRoutes =
+@@ -44,11 +46,24 @@ export const movementsRoutes =
+         schema: {
+           tags,
+           summary: 'История изменений остатка позиции',
+           params: idParamsSchema,
+           querystring: paginationQuerySchema,
+           response: { 200: paginatedSchema(movementSchema), 404: errorResponseSchema },
+         },
+       },
+       (request) => service.list(request.params.id, request.query.page, request.query.pageSize),
+     );
++
++    app.get(
++      '/movements',
++      {
++        schema: {
++          tags,
++          summary: 'Общая история изменений остатков',
++          querystring: listMovementsQuerySchema,
++          response: { 200: paginatedSchema(movementListItemSchema), 400: errorResponseSchema },
++        },
++      },
++      (request) => service.listAll(request.query),
++    );
+   };
+diff --git a/apps/server/src/modules/movements/movements.service.ts b/apps/server/src/modules/movements/movements.service.ts
+index 2233578..77b8e44 100644
+--- a/apps/server/src/modules/movements/movements.service.ts
++++ b/apps/server/src/modules/movements/movements.service.ts
+@@ -1,35 +1,54 @@
+ import {
+   type CreateMovementData,
++  type ListMovementsQuery,
+   type Movement,
++  type MovementListItem,
+   type MovementResult,
+   type Paginated,
+ } from '@label-stock/shared';
+ import type { Database, Transaction } from '../../db/client';
+ import type { MovementRow } from '../../db/schema';
+ import { LabelsRepository } from '../labels/labels.repository';
+ import { toLabelDto } from '../labels/label.mapper';
+-import { MovementsRepository, type DeltaOptions } from './movements.repository';
++import {
++  MovementsRepository,
++  type DeltaOptions,
++  type MovementWithLabelRow,
++} from './movements.repository';
+ import { assertActive, assertDeltaAllowed, labelNotFound } from './stock-rules';
+ 
+ export function toMovementDto(row: MovementRow): Movement {
+   return {
+     id: row.id,
+     labelId: row.labelId,
+     delta: row.delta,
+     quantityAfter: row.quantityAfter,
+     reason: row.reason,
+     comment: row.comment,
+     createdAt: row.createdAt.toISOString(),
+   };
+ }
+ 
++export function toMovementListItemDto(row: MovementWithLabelRow): MovementListItem {
++  return {
++    ...toMovementDto(row.movement),
++    label: {
++      id: row.label.id,
++      counterparty: { id: row.label.counterpartyId, name: row.counterpartyName },
++      layoutNumber: row.label.layoutNumber,
++      barcode: row.label.barcode,
++      deletedAt: row.label.deletedAt?.toISOString() ?? null,
++    },
++  };
++}
++
+ type DeltaOperation = Exclude<CreateMovementData, { reason: 'inventory' }>;
+ type InventoryOperation = Extract<CreateMovementData, { reason: 'inventory' }>;
+ 
+ /** Остаток меняется только здесь: изменение и запись в журнал идут одной транзакцией. */
+ export class MovementsService {
+   private readonly labels: LabelsRepository;
+ 
+   constructor(private readonly db: Database) {
+     this.labels = new LabelsRepository(db);
+   }
+@@ -48,20 +67,30 @@ export class MovementsService {
+   async list(labelId: string, page: number, pageSize: number): Promise<Paginated<Movement>> {
+     if (!(await this.labels.findById(labelId))) throw labelNotFound();
+     const { rows, total } = await new MovementsRepository(this.db).listByLabel(
+       labelId,
+       page,
+       pageSize,
+     );
+     return { items: rows.map(toMovementDto), total, page, pageSize };
+   }
+ 
++  async listAll(query: ListMovementsQuery): Promise<Paginated<MovementListItem>> {
++    const { rows, total } = await new MovementsRepository(this.db).listAll(query);
++    return {
++      items: rows.map(toMovementListItemDto),
++      total,
++      page: query.page,
++      pageSize: query.pageSize,
++    };
++  }
++
+   private async applyDelta(
+     tx: Transaction,
+     labelId: string,
+     operation: DeltaOperation,
+   ): Promise<MovementRow> {
+     const movements = new MovementsRepository(tx);
+     const options: DeltaOptions =
+       operation.reason === 'print'
+         ? { printedAt: operation.printedAt, layoutChanged: operation.layoutChanged }
+         : { usableOnly: operation.reason === 'consumption' };
+diff --git a/apps/server/test/movements.test.ts b/apps/server/test/movements.test.ts
+index 3d86b87..e7167ee 100644
+--- a/apps/server/test/movements.test.ts
++++ b/apps/server/test/movements.test.ts
+@@ -153,11 +153,70 @@ describe('движения остатка', () => {
+     expect(second.json().items.map((item: { delta: number }) => item.delta)).toEqual([10]);
+   });
+ 
+   it('история удалённой позиции доступна', async () => {
+     const label = await createLabel(context.app, { quantity: 10 });
+     await context.app.inject({ method: 'DELETE', url: `/api/labels/${label.id}` });
+     const response = await context.app.inject({ url: `/api/labels/${label.id}/movements` });
+     expect(response.statusCode).toBe(200);
+     expect(response.json().total).toBe(1);
+   });
++
++  it('общая история: новые сверху, поиск, пагинация и удалённые позиции', async () => {
++    const first = await createLabel(context.app, {
++      layoutNumber: '00123',
++      barcode: 'ABC123456',
++      quantity: 100,
++    });
++    const second = await createLabel(context.app, {
++      layoutNumber: '00999',
++      barcode: 'XYZ999999',
++      quantity: 40,
++    });
++    await postMovement(context.app, first.id, {
++      reason: 'consumption',
++      delta: -5,
++      comment: 'Заказ',
++    });
++
++    const all = await context.app.inject({ url: '/api/movements' });
++    expect(all.statusCode, all.body).toBe(200);
++    expect(all.json()).toMatchObject({ total: 3, page: 1, pageSize: 50 });
++    expect(all.json().items.map((item: { delta: number }) => item.delta)).toEqual([-5, 40, 100]);
++    expect(all.json().items[0]).toMatchObject({
++      labelId: first.id,
++      quantityAfter: 95,
++      reason: 'consumption',
++      comment: 'Заказ',
++      label: {
++        id: first.id,
++        counterparty: { name: 'Ромашка' },
++        layoutNumber: '00123',
++        barcode: 'ABC123456',
++        deletedAt: null,
++      },
++    });
++
++    const byLayout = await context.app.inject({ url: '/api/movements?search=001' });
++    expect(byLayout.json().items.map((item: { labelId: string }) => item.labelId)).toEqual([
++      first.id,
++      first.id,
++    ]);
++    expect(
++      byLayout.json().items.every((item: { labelId: string }) => item.labelId !== second.id),
++    ).toBe(true);
++
++    const byBarcodeSuffix = await context.app.inject({ url: '/api/movements?search=23456' });
++    expect(byBarcodeSuffix.json().total).toBe(2);
++    const byCounterparty = await context.app.inject({ url: '/api/movements?search=Ромашка' });
++    expect(byCounterparty.json().total).toBe(0);
++
++    const secondPage = await context.app.inject({ url: '/api/movements?page=2&pageSize=2' });
++    expect(secondPage.json()).toMatchObject({ total: 3, page: 2, pageSize: 2 });
++    expect(secondPage.json().items).toHaveLength(1);
++
++    await context.app.inject({ method: 'DELETE', url: `/api/labels/${first.id}` });
++    const afterDelete = await context.app.inject({ url: '/api/movements?search=00123' });
++    expect(afterDelete.json().total).toBe(2);
++    expect(afterDelete.json().items[0].label.deletedAt).not.toBeNull();
++  });
+ });
+diff --git a/packages/shared/src/schemas/movement.test.ts b/packages/shared/src/schemas/movement.test.ts
+index d330c95..5492a88 100644
+--- a/packages/shared/src/schemas/movement.test.ts
++++ b/packages/shared/src/schemas/movement.test.ts
+@@ -1,13 +1,13 @@
+ import { describe, expect, it } from 'vitest';
+ import { INT32_MAX } from './fields';
+-import { createMovementSchema } from './movement';
++import { createMovementSchema, listMovementsQuerySchema, movementListItemSchema } from './movement';
+ 
+ const accepts = (input: unknown) => createMovementSchema.safeParse(input).success;
+ 
+ describe('createMovementSchema', () => {
+   describe('consumption', () => {
+     it('принимает отрицательную дельту', () => {
+       expect(createMovementSchema.parse({ reason: 'consumption', delta: -5 })).toEqual({
+         reason: 'consumption',
+         delta: -5,
+       });
+@@ -104,10 +104,43 @@ describe('createMovementSchema', () => {
+ });
+ 
+ describe('createMovementSchema: причины заявок', () => {
+   it.each(['transfer', 'disposal', 'created'])(
+     'reason %s через движения не принимается',
+     (reason) => {
+       expect(accepts({ reason, delta: -1 })).toBe(false);
+     },
+   );
+ });
++
++describe('общая журнал', () => {
++  it('общий журнал: параметры по умолчанию и DTO позиции', () => {
++    expect(listMovementsQuerySchema.parse({})).toEqual({ page: 1, pageSize: 50 });
++    expect(listMovementsQuerySchema.parse({ search: ' 00123 ', pageSize: '200' })).toEqual({
++      search: '00123',
++      page: 1,
++      pageSize: 200,
++    });
++
++    const item = {
++      id: 'movement-1',
++      labelId: 'label-1',
++      delta: -5,
++      quantityAfter: 95,
++      reason: 'consumption',
++      comment: null,
++      createdAt: '2026-11-17T10:00:00.000Z',
++      label: {
++        id: 'label-1',
++        counterparty: { id: 'counterparty-1', name: 'Ромашка' },
++        layoutNumber: '00123',
++        barcode: 'ABC123456',
++        deletedAt: null,
++      },
++    };
++    expect(movementListItemSchema.parse(item)).toEqual(item);
++  });
++
++  it('общий журнал: pageSize больше 200 отклоняется', () => {
++    expect(listMovementsQuerySchema.safeParse({ pageSize: 201 }).success).toBe(false);
++  });
++});
+diff --git a/packages/shared/src/schemas/movement.ts b/packages/shared/src/schemas/movement.ts
+index c90c99b..0a6f84a 100644
+--- a/packages/shared/src/schemas/movement.ts
++++ b/packages/shared/src/schemas/movement.ts
+@@ -1,12 +1,19 @@
+ import { z } from 'zod';
+-import { commentSchema, deltaSchema, isoDateSchema, quantitySchema } from './fields';
++import { paginationQuerySchema } from './common';
++import {
++  commentSchema,
++  deltaSchema,
++  isoDateSchema,
++  quantitySchema,
++  searchTextSchema,
++} from './fields';
+ import { labelSchema } from './label';
+ 
+ export const MOVEMENT_REASONS = [
+   'created',
+   'print',
+   'consumption',
+   'inventory',
+   'correction',
+   'transfer',
+   'disposal',
+@@ -79,10 +86,33 @@ export const createLabelResultSchema = z.object({
+   merged: z.boolean(),
+   /** Движение остатка: null при merged и нулевом остатке формы. */
+   movement: movementSchema.nullable(),
+ });
+ 
+ export type Movement = z.infer<typeof movementSchema>;
+ export type CreateMovementInput = z.input<typeof createMovementSchema>;
+ export type CreateMovementData = z.output<typeof createMovementSchema>;
+ export type MovementResult = z.infer<typeof movementResultSchema>;
+ export type CreateLabelResult = z.infer<typeof createLabelResultSchema>;
++
++export const movementListItemSchema = movementSchema.extend({
++  label: labelSchema.pick({
++    id: true,
++    counterparty: true,
++    layoutNumber: true,
++    barcode: true,
++    deletedAt: true,
++  }),
++});
++
++export const listMovementsQuerySchema = paginationQuerySchema.extend({
++  search: searchTextSchema,
++});
++
++export type MovementListItem = z.infer<typeof movementListItemSchema>;
++export type ListMovementsQuery = z.output<typeof listMovementsQuerySchema>;
++/** Параметры списка на стороне клиента: до сериализации в query string. */
++export interface ListMovementsParams {
++  search?: string | undefined;
++  page?: number | undefined;
++  pageSize?: number | undefined;
++}

@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import { commentSchema, deltaSchema, isoDateSchema, quantitySchema } from './fields';
+import { paginationQuerySchema } from './common';
+import {
+  commentSchema,
+  deltaSchema,
+  isoDateSchema,
+  quantitySchema,
+  searchTextSchema,
+} from './fields';
 import { labelSchema } from './label';
 
 export const MOVEMENT_REASONS = [
@@ -86,3 +93,26 @@ export type CreateMovementInput = z.input<typeof createMovementSchema>;
 export type CreateMovementData = z.output<typeof createMovementSchema>;
 export type MovementResult = z.infer<typeof movementResultSchema>;
 export type CreateLabelResult = z.infer<typeof createLabelResultSchema>;
+
+export const movementListItemSchema = movementSchema.extend({
+  label: labelSchema.pick({
+    id: true,
+    counterparty: true,
+    layoutNumber: true,
+    barcode: true,
+    deletedAt: true,
+  }),
+});
+
+export const listMovementsQuerySchema = paginationQuerySchema.extend({
+  search: searchTextSchema,
+});
+
+export type MovementListItem = z.infer<typeof movementListItemSchema>;
+export type ListMovementsQuery = z.output<typeof listMovementsQuerySchema>;
+/** Параметры списка на стороне клиента: до сериализации в query string. */
+export interface ListMovementsParams {
+  search?: string | undefined;
+  page?: number | undefined;
+  pageSize?: number | undefined;
+}

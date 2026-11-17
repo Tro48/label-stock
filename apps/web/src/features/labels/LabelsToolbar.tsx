@@ -1,4 +1,5 @@
 import { useId, type Ref } from 'react';
+import { SearchField } from '../../shared/ui/SearchField';
 import { CounterpartyInput } from '../counterparties/CounterpartyInput';
 
 interface LabelsToolbarProps {
@@ -24,23 +25,14 @@ export function LabelsToolbar({
 
   return (
     <div className="toolbar">
-      <form role="search" className="toolbar__search" onSubmit={(event) => event.preventDefault()}>
-        <label htmlFor={`${ids}-search`} className="field__label">
-          Найти или отсканировать штрихкод
-        </label>
-        <input
-          id={`${ids}-search`}
-          ref={searchRef}
-          type="search"
-          className="input input--large"
-          placeholder="Контрагент, номер макета или последние цифры штрихкода"
-          autoComplete="off"
-          value={search}
-          onChange={(event) => onSearchChange(event.target.value)}
-          // Единственное поле, куда сканер может вводить код, см. useBarcodeScanner.
-          data-scanner-target=""
-        />
-      </form>
+      <SearchField
+        searchRef={searchRef}
+        value={search}
+        onChange={onSearchChange}
+        label="Найти или отсканировать штрихкод"
+        placeholder="Контрагент, номер макета или последние цифры штрихкода"
+        scannerTarget
+      />
 
       <div className="toolbar__filters">
         <div className="field field--inline">

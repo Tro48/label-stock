@@ -160,4 +160,63 @@ describe('движения остатка', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().total).toBe(1);
   });
+
+  it('общая история: новые сверху, поиск, пагинация и удалённые позиции', async () => {
+    const first = await createLabel(context.app, {
+      layoutNumber: '00123',
+      barcode: 'ABC123456',
+      quantity: 100,
+    });
+    const second = await createLabel(context.app, {
+      layoutNumber: '00999',
+      barcode: 'XYZ999999',
+      quantity: 40,
+    });
+    await postMovement(context.app, first.id, {
+      reason: 'consumption',
+      delta: -5,
+      comment: 'Заказ',
+    });
+
+    const all = await context.app.inject({ url: '/api/movements' });
+    expect(all.statusCode, all.body).toBe(200);
+    expect(all.json()).toMatchObject({ total: 3, page: 1, pageSize: 50 });
+    expect(all.json().items.map((item: { delta: number }) => item.delta)).toEqual([-5, 40, 100]);
+    expect(all.json().items[0]).toMatchObject({
+      labelId: first.id,
+      quantityAfter: 95,
+      reason: 'consumption',
+      comment: 'Заказ',
+      label: {
+        id: first.id,
+        counterparty: { name: 'Ромашка' },
+        layoutNumber: '00123',
+        barcode: 'ABC123456',
+        deletedAt: null,
+      },
+    });
+
+    const byLayout = await context.app.inject({ url: '/api/movements?search=001' });
+    expect(byLayout.json().items.map((item: { labelId: string }) => item.labelId)).toEqual([
+      first.id,
+      first.id,
+    ]);
+    expect(
+      byLayout.json().items.every((item: { labelId: string }) => item.labelId !== second.id),
+    ).toBe(true);
+
+    const byBarcodeSuffix = await context.app.inject({ url: '/api/movements?search=23456' });
+    expect(byBarcodeSuffix.json().total).toBe(2);
+    const byCounterparty = await context.app.inject({ url: '/api/movements?search=Ромашка' });
+    expect(byCounterparty.json().total).toBe(0);
+
+    const secondPage = await context.app.inject({ url: '/api/movements?page=2&pageSize=2' });
+    expect(secondPage.json()).toMatchObject({ total: 3, page: 2, pageSize: 2 });
+    expect(secondPage.json().items).toHaveLength(1);
+
+    await context.app.inject({ method: 'DELETE', url: `/api/labels/${first.id}` });
+    const afterDelete = await context.app.inject({ url: '/api/movements?search=00123' });
+    expect(afterDelete.json().total).toBe(2);
+    expect(afterDelete.json().items[0].label.deletedAt).not.toBeNull();
+  });
 });
